@@ -7,6 +7,7 @@
 | Bun | ≥ 1.0 | Runtime |
 | pnpm | ≥ 10 | Package manager |
 | Docker | any | For PostgreSQL pgvector container |
+| Swift / Xcode Command Line Tools | Installed on macOS | Compiles the local Speech transcription helper |
 | LM Studio | ≥ 0.3 | OpenAI-compatible local model gateway |
 | iPhone Shortcuts | iOS 16+ | Client entry point for input |
 
@@ -36,7 +37,7 @@ psql "******localhost:5432/adhd_healing" -c "SELECT version();"
 2. Enable the local server (default: `http://localhost:1234/v1`).
 3. Confirm the models are listed in `GET http://localhost:1234/v1/models`.
 
-> **Whisper transcription**: If your LM Studio version exposes `POST /v1/audio/transcriptions`, load a Whisper model. Otherwise the service returns an error for audio-mode requests.
+> Audio transcription no longer depends on LM Studio Whisper. The service compiles a small Swift helper and calls macOS Speech for on-device transcription.
 
 ## 3. Configure environment
 
@@ -75,6 +76,8 @@ pnpm install
 bun --env-file=.env server.ts
 ```
 
+On first startup, macOS may prompt for Speech Recognition permission when the transcription helper runs its health check. Grant it, or the server will fail fast before opening the HTTP port.
+
 Expected output:
 
 ```
@@ -86,6 +89,8 @@ Expected output:
 ## 6. iPhone Shortcut setup
 
 Build a Shortcut that loops until the server returns `response_type = "final"`:
+
+For an action-by-action build guide with recommended variable names, see [docs/iphone-shortcut.md](./iphone-shortcut.md).
 
 1. **Choose input**: Offer "Voice" or "Text" each turn.
 2. **Send to server**: `POST http://<mac-ip>:5001/distill` as `multipart/form-data`:
@@ -146,6 +151,7 @@ On first run, macOS may prompt for Automation permission for Reminders. Grant it
 | --- | --- |
 | `Missing required environment variable: DATABASE_URL` | `.env` not loaded or variable missing |
 | `Session not found: <id>` | `session_id` was dropped between Shortcut turns |
-| `[embedding] Model unavailable` | Embedding model not loaded in LM Studio — fallback vector used |
+| embedding request failed | Embedding model not loaded in LM Studio, or model name does not match current configuration |
 | `[reminders] Failed to add reminder` | macOS Automation permission not granted |
+| `Speech recognition authorization failed` | Grant macOS Speech Recognition permission to the terminal process or rerun startup |
 | `400` from `/distill` | `input_mode`, `text`, or `audio` field missing or wrong |

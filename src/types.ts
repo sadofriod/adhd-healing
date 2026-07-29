@@ -29,6 +29,8 @@ export interface TextRequestData {
 export interface AudioRequestData {
   inputMode: 'audio';
   audioBuffer: Buffer;
+  audioFileName?: string;
+  audioMimeType?: string;
   sessionId?: string;
 }
 

@@ -5,27 +5,44 @@ import { loadOrCreateSession, advanceTurn } from '../../services/session.js';
 import { makeDecision, isFinalDecision } from '../../services/clarification.js';
 import { saveToLocalVault } from '../../services/vault.js';
 import { syncToAppleReminders } from '../../services/reminders.js';
-import { updateSessionStatus } from '../../db/queries/sessions.js';
+import {
+  completeSessionWithFinalMessage,
+  updateSessionStatus,
+} from '../../db/queries/sessions.js';
 import { insertMessage } from '../../db/queries/messages.js';
 import { insertIdea, findSimilarIdeas } from '../../db/queries/ideas.js';
-import { buildSessionContext } from '../../utils/context.js';
-import { extractTitle, extractMilestone } from '../../utils/markdown.js';
+import { buildSessionArtifacts } from '../../utils/context.js';
+import {
+  buildReminderDescription,
+  extractTitle,
+  extractMilestone,
+  normalizeFinalMarkdown,
+} from '../../utils/markdown.js';
+import {
+  getAssistantRecordContent,
+  getResponseTurnIndex,
+  runFinalizeWritePipeline,
+} from './finalize.js';
 
 const SIMILAR_IDEAS_LIMIT = 2;
-const NO_HISTORY_CONTEXT = '（无相关历史记录）';
+const NO_HISTORY_CONTEXT = '无相关历史记录';
 
 async function resolveText(reqData: DistillRequestData): Promise<string> {
-  if (reqData.inputMode === 'audio') return transcribeAudio(reqData.audioBuffer);
+  if (reqData.inputMode === 'audio') {
+    return transcribeAudio(reqData.audioBuffer, {
+      fileName: reqData.audioFileName,
+      mimeType: reqData.audioMimeType,
+    });
+  }
   return reqData.text;
 }
 
 async function persistUserMessage(
   sessionId: string,
   text: string,
-  inputMode: string
+  inputMode: DistillRequestData['inputMode']
 ): Promise<void> {
   await insertMessage(sessionId, 'user', inputMode, text);
-  await advanceTurn(sessionId);
 }
 
 async function buildRagContext(text: string): Promise<string> {
@@ -36,33 +53,60 @@ async function buildRagContext(text: string): Promise<string> {
   return ideas.map(i => i.distilled_text).join('\n\n---\n\n');
 }
 
-async function saveFinalIdea(sessionId: string, rawText: string, markdown: string): Promise<void> {
+async function saveFinalIdea(rawText: string, markdown: string): Promise<void> {
   const vector = await getEmbedding(rawText);
   const vectorStr = formatVectorForPg(vector);
   await insertIdea(vectorStr, rawText, markdown);
-  await updateSessionStatus(sessionId, 'completed');
+}
+
+async function commitSessionCompletion(sessionId: string, markdown: string): Promise<void> {
+  await completeSessionWithFinalMessage(sessionId, markdown);
   console.log('[session] Completed session:', sessionId);
+}
+
+async function abandonSessionAfterFailure(sessionId: string, error: unknown): Promise<never> {
+  try {
+    await updateSessionStatus(sessionId, 'abandoned');
+    console.error('[session] Abandoned session after finalize failure:', sessionId);
+  } catch (statusError) {
+    console.error('[session] Failed to abandon session after finalize failure:', statusError);
+  }
+
+  throw error;
 }
 
 async function handleMilestone(markdown: string): Promise<void> {
   const milestone = extractMilestone(markdown);
   if (!milestone) return;
+  const description = buildReminderDescription(markdown);
   try {
-    await syncToAppleReminders(milestone);
+    await syncToAppleReminders(milestone, description);
   } catch (error) {
     console.error('[reminders] Error syncing reminder:', error);
   }
 }
 
-async function finalizeSession(
+export async function finalizeSession(
   sessionId: string,
   rawText: string,
   markdown: string
 ): Promise<void> {
   const title = extractTitle(markdown);
-  await saveFinalIdea(sessionId, rawText, markdown);
-  await saveToLocalVault(title, markdown, rawText);
-  await handleMilestone(markdown);
+  await runFinalizeWritePipeline({
+    writeToVault: async () => {
+      await saveToLocalVault(title, markdown, rawText);
+    },
+    writeIdeaRecord: () => saveFinalIdea(rawText, markdown),
+    syncReminder: () => handleMilestone(markdown),
+    commitSessionCompletion: () => commitSessionCompletion(sessionId, markdown),
+  });
+}
+
+async function persistClarifyDecision(sessionId: string, decision: LlmDecision): Promise<void> {
+  if (isFinalDecision(decision)) return;
+
+  await insertMessage(sessionId, 'assistant', 'system', getAssistantRecordContent(decision));
+  await advanceTurn(sessionId);
 }
 
 type FinalFields = Pick<DistillResponse, 'final_markdown' | 'final_title' | 'milestone'>;
@@ -84,12 +128,21 @@ function selectFinalFields(decision: LlmDecision): FinalFields {
   return buildNullFinalFields();
 }
 
+function normalizeDecision(decision: LlmDecision, ragContext: string): LlmDecision {
+  if (!isFinalDecision(decision)) return decision;
+
+  return {
+    ...decision,
+    markdown: normalizeFinalMarkdown(decision.markdown, ragContext),
+  };
+}
+
 function buildResponse(session: Session, decision: LlmDecision): DistillResponse {
   return {
     session_id: session.id,
     response_type: decision.type,
     assistant_message: decision.message,
-    turn_index: session.turn_count,
+    turn_index: getResponseTurnIndex(session.turn_count, decision),
     is_complete: isFinalDecision(decision),
     ...selectFinalFields(decision),
   };
@@ -100,10 +153,23 @@ export async function processDistill(reqData: DistillRequestData): Promise<Disti
   const text = await resolveText(reqData);
   await persistUserMessage(session.id, text, reqData.inputMode);
   const updatedSession = await loadOrCreateSession(session.id);
-  const sessionContext = await buildSessionContext(session.id);
-  const ragContext = await buildRagContext(text);
-  const decision = await makeDecision(updatedSession, sessionContext, ragContext);
-  await insertMessage(session.id, 'assistant', 'system', decision.message);
-  if (isFinalDecision(decision)) await finalizeSession(session.id, text, decision.markdown);
+  const sessionArtifacts = await buildSessionArtifacts(session.id);
+  const rawText = sessionArtifacts.rawText || text;
+  const ragContext = await buildRagContext(rawText);
+  const decision = normalizeDecision(
+    await makeDecision(updatedSession, sessionArtifacts.sessionContext, ragContext),
+    ragContext
+  );
+
+  if (isFinalDecision(decision)) {
+    try {
+      await finalizeSession(session.id, rawText, decision.markdown);
+    } catch (error) {
+      return abandonSessionAfterFailure(session.id, error);
+    }
+  } else {
+    await persistClarifyDecision(session.id, decision);
+  }
+
   return buildResponse(updatedSession, decision);
 }

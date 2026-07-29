@@ -11,7 +11,27 @@ function messagesToContext(messages: SessionMessage[]): string {
   return messages.map(formatMessage).join('\n');
 }
 
+function messagesToRawText(messages: SessionMessage[]): string {
+  const userMessages = messages
+    .filter(message => message.role === 'user')
+    .map(message => message.content.trim())
+    .filter(Boolean);
+
+  return userMessages.join('\n\n');
+}
+
 export async function buildSessionContext(sessionId: string): Promise<string> {
   const messages = await getMessagesBySessionId(sessionId);
   return messagesToContext(messages);
+}
+
+export async function buildSessionArtifacts(
+  sessionId: string
+): Promise<{ sessionContext: string; rawText: string }> {
+  const messages = await getMessagesBySessionId(sessionId);
+
+  return {
+    sessionContext: messagesToContext(messages),
+    rawText: messagesToRawText(messages),
+  };
 }

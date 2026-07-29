@@ -2,17 +2,28 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { config } from '../config/env.js';
 
+const FALLBACK_SAFE_TITLE = 'untitled-idea';
+
 function buildSafeTitle(title: string): string {
-  return title
+  const safeTitle = title
     .replace(/[^\w\u4e00-\u9fa5 -]/g, '')
     .replace(/\s+/g, '-')
     .slice(0, 60);
+
+  if (safeTitle.length > 0) return safeTitle;
+  return FALLBACK_SAFE_TITLE;
 }
 
-function buildFilename(title: string): string {
-  const date = new Date().toISOString().split('T')[0];
+function buildTimestamp(now: Date): string {
+  const [, timePart = '000000.000Z'] = now.toISOString().split('T');
+  return timePart.replace(/[:.]/g, '').replace('Z', '').slice(0, 9);
+}
+
+export function buildVaultFilename(title: string, now: Date = new Date()): string {
+  const date = now.toISOString().split('T')[0];
+  const timestamp = buildTimestamp(now);
   const safeTitle = buildSafeTitle(title);
-  return `${date}-${safeTitle}.md`;
+  return `${date}-${timestamp}-${safeTitle}.md`;
 }
 
 function buildFrontMatter(title: string): string {
@@ -32,7 +43,7 @@ export async function saveToLocalVault(
   rawText: string
 ): Promise<string> {
   await mkdir(config.brainVaultPath, { recursive: true });
-  const filename = buildFilename(title);
+  const filename = buildVaultFilename(title);
   const filePath = join(config.brainVaultPath, filename);
   const content = buildFileContent(title, finalMarkdown, rawText);
   await writeFile(filePath, content, 'utf-8');

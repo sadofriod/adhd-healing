@@ -8,14 +8,7 @@ export class ValidationError extends Error {
   }
 }
 
-const optionalSessionIdSchema = z.preprocess(
-  value => {
-    if (typeof value !== 'string') return undefined;
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  },
-  z.string().uuid('session_id must be a valid UUID').optional()
-);
+const optionalSessionIdSchema = z.string().uuid('session_id must be a valid UUID').optional();
 
 const basePayloadSchema = z.object({
   input_mode: z.enum(['text', 'audio']),
@@ -39,16 +32,29 @@ const audioPayloadSchema = basePayloadSchema.extend({
 type TextPayload = z.infer<typeof textPayloadSchema>;
 type AudioPayload = z.infer<typeof audioPayloadSchema>;
 
+function getFirstErrorMessage(error: z.ZodError): string {
+  const firstIssue = error.issues[0];
+  if (firstIssue?.message) return firstIssue.message;
+  return 'Invalid request payload';
+}
+
 function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
-  if (result.success) return result.data;
-  throw new ValidationError(result.error.issues[0]?.message ?? 'Invalid request payload');
+  if (!result.success) throw new ValidationError(getFirstErrorMessage(result.error));
+  return result.data;
+}
+
+function toOptionalString(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 function readPayload(formData: FormData): Record<string, unknown> {
   return {
     input_mode: formData.get('input_mode'),
-    session_id: formData.get('session_id'),
+    session_id: toOptionalString(formData.get('session_id')),
     text: formData.get('text') ?? undefined,
     audio: formData.get('audio') ?? undefined,
   };
@@ -76,6 +82,8 @@ async function buildAudioRequestData(payload: AudioPayload): Promise<DistillRequ
   return {
     inputMode: 'audio',
     audioBuffer,
+    audioFileName: payload.audio.name,
+    audioMimeType: payload.audio.type,
     sessionId: payload.session_id,
   };
 }
@@ -88,7 +96,14 @@ async function toRequestData(payload: TextPayload | AudioPayload): Promise<Disti
 }
 
 export async function validateDistillRequest(req: Request): Promise<DistillRequestData> {
-  const formData = await req.formData();
+  let formData: FormData;
+
+  try {
+    formData = await req.formData();
+  } catch {
+    throw new ValidationError('Request body must be valid multipart/form-data');
+  }
+
   const payload = parsePayload(formData);
   return toRequestData(payload);
 }

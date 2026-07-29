@@ -1,6 +1,7 @@
 import { config } from './src/config/env.js';
 import { initDatabase } from './src/db/init.js';
 import { handleDistill } from './src/routes/distill/index.js';
+import { verifyStartupDependencies } from './src/services/startup.js';
 
 async function routeRequest(req: Request): Promise<Response> {
   const { pathname } = new URL(req.url);
@@ -14,6 +15,7 @@ async function handleDistillRoute(req: Request): Promise<Response> {
 }
 
 await initDatabase();
+await verifyStartupDependencies();
 
 const server = Bun.serve({
   port: config.port,

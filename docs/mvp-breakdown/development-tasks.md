@@ -65,7 +65,7 @@ flowchart LR
 | T-013 | WS-04 | Auto-create `my_ideas` table | Final idea table with `vector(768)` | MVP-FR-304, MVP-FR-307, MVP-FR-308 | T-010 | Fresh database contains `my_ideas` with `vector(768)` |
 | T-014 | WS-04 | Implement vector serialization helper | `formatVectorForPg(vector)` | MVP-FR-311 | T-013 | A 768-dim array is converted into valid pgvector text format |
 | T-015 | WS-05 | Configure LM Studio OpenAI-compatible client | Model gateway setup | MVP-FR-203 | T-004 | Service can target `http://localhost:1234/v1` |
-| T-016 | WS-05 | Implement embedding generation | `getEmbedding(text)` returns 768 dims or fallback vector | MVP-FR-204, MVP-FR-206 | T-015 | Normal path returns embedding; fallback logs warning and returns 768 values |
+| T-016 | WS-05 | Implement embedding generation | `getEmbedding(text)` returns 768 dims from the configured model | MVP-FR-204, MVP-FR-206 | T-015 | Embedding request succeeds only when the configured model is available |
 | T-017 | WS-05 | Implement clarification and final-distill prompts | Prompt templates for ask/finalize decisions | MVP-FR-205, MVP-FR-207, MVP-FR-208, MVP-FR-209, MVP-FR-406 | T-015 | LLM can produce either one focused question or final Markdown |
 | T-018 | WS-06 | Create unified `POST /distill` handler | HTTP endpoint skeleton | MVP-FR-103, MVP-FR-108, MVP-FR-109 | T-001 | Endpoint accepts requests and returns structured JSON |
 | T-019 | WS-06 | Add multimodal request validation and error responses | `400` for invalid mode/content; `500` for execution failures | MVP-FR-105, MVP-FR-106, MVP-FR-110, MVP-FR-111 | T-018 | Bad text or missing audio fails with `400`; thrown errors fail with `500` |
@@ -120,7 +120,7 @@ An MVP task is only done when all conditions below are met:
 | Submit first valid audio request | Audio is transcribed and enters the same question/final flow |
 | Reach final state | DB final row inserted, vault file created, final JSON returned |
 | Start a later similar session | Query retrieves historical context and response references prior idea |
-| LM Studio embedding unavailable | Warning log emitted and request still completes with fallback vector |
+| LM Studio embedding unavailable | Startup or request fails with a clear model configuration error |
 | Reminders permission denied | Final request still succeeds, reminder failure is logged |
 
 ## 9. Open Implementation Decisions

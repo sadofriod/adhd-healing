@@ -1,8 +1,11 @@
 import { z } from 'zod';
+import { isAbsolute } from 'path';
 
 const envSchema = z.object({
   DATABASE_URL: z.string().url(),
-  BRAIN_VAULT_PATH: z.string().trim().min(1),
+  BRAIN_VAULT_PATH: z.string().trim().min(1).refine(isAbsolute, {
+    message: 'must be an absolute path',
+  }),
   LM_STUDIO_BASE_URL: z.string().url().default('http://localhost:1234/v1'),
   EMBEDDING_MODEL: z.string().trim().min(1).default('nomic-ai/nomic-embed-text-v1.5'),
   CHAT_MODEL: z.string().trim().min(1).default('qwen2.5-7b-instruct'),
@@ -20,10 +23,10 @@ function failInvalidEnv(error: z.ZodError): never {
   error.issues.forEach(issue => {
     console.error(`- ${formatIssuePath(issue.path)}: ${issue.message}`);
   });
-  process.exit(1);
+  throw new Error('Invalid environment variables');
 }
 
-const parsedEnv = envSchema.safeParse(process.env);
+const parsedEnv = envSchema.safeParse(Bun.env);
 const env = parsedEnv.success ? parsedEnv.data : failInvalidEnv(parsedEnv.error);
 
 export const config = {

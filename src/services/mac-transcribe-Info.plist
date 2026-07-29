@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>mac-transcribe</string>
+  <key>CFBundleIdentifier</key>
+  <string>local.adhd-healing.mac-transcribe</string>
+  <key>CFBundleName</key>
+  <string>adhd-healing macOS Speech Helper</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSBackgroundOnly</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Import recorded audio files for local transcription.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Transcribe user-recorded idea notes into text for local distillation.</string>
+</dict>
+</plist>

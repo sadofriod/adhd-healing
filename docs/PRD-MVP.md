@@ -142,7 +142,7 @@ flowchart LR
 | MVP-FR-203 | 服务端必须连接本地 LM Studio，默认地址为 `http://localhost:1234/v1` |
 | MVP-FR-204 | Embedding 模型使用 `nomic-ai/nomic-embed-text-v1.5` |
 | MVP-FR-205 | 澄清和最终蒸馏使用同一类本地对话模型，例如 `qwen2.5-7b-instruct` |
-| MVP-FR-206 | 当 embedding 模型不可用时，系统允许使用降级向量继续执行链路，但需打印告警日志 |
+| MVP-FR-206 | 当 embedding 模型不可用时，系统必须返回错误并提示检查 LM Studio 模型配置 |
 | MVP-FR-207 | LLM 在信息不足时必须主动发问，而不是直接总结 |
 | MVP-FR-208 | 每轮只允许提出一个聚焦问题，避免一次性追问过多 |
 | MVP-FR-209 | 当信息已经充分、达到轮次上限或用户主动要求直接总结时，系统必须输出最终结果 |
