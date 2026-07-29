@@ -25,6 +25,6 @@ export async function handleDistill(req: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof ValidationError) return errorResponse(400, error.message);
     console.error('[distill] Unhandled error:', error);
-    return errorResponse(500, getErrorMessage(error));
+    return errorResponse(500, 'Internal server error');
   }
 }

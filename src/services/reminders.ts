@@ -1,8 +1,8 @@
 function buildReminderScript(taskTitle: string): string {
-  const escaped = taskTitle.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const safeTitle = JSON.stringify(taskTitle);
   return [
     "var app = Application('Reminders');",
-    `var rem = app.Reminder({ name: '${escaped}' });`,
+    `var rem = app.Reminder({ name: ${safeTitle} });`,
     'app.defaultList.reminders.push(rem);',
   ].join(' ');
 }

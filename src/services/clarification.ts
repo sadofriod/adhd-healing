@@ -34,7 +34,9 @@ function isPlainObject(val: unknown): val is Record<string, unknown> {
 }
 
 function hasRequiredFields(val: Record<string, unknown>): boolean {
-  return typeof val['type'] === 'string' && typeof val['message'] === 'string';
+  if (typeof val['type'] !== 'string' || typeof val['message'] !== 'string') return false;
+  if (val['type'] === 'final') return typeof val['markdown'] === 'string';
+  return true;
 }
 
 function isLlmDecision(val: unknown): val is LlmDecision {

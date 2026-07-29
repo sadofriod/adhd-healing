@@ -99,10 +99,11 @@ export async function processDistill(reqData: DistillRequestData): Promise<Disti
   const session = await loadOrCreateSession(reqData.sessionId);
   const text = await resolveText(reqData);
   await persistUserMessage(session.id, text, reqData.inputMode);
+  const updatedSession = await loadOrCreateSession(session.id);
   const sessionContext = await buildSessionContext(session.id);
   const ragContext = await buildRagContext(text);
-  const decision = await makeDecision(session, sessionContext, ragContext);
+  const decision = await makeDecision(updatedSession, sessionContext, ragContext);
   await insertMessage(session.id, 'assistant', 'system', decision.message);
   if (isFinalDecision(decision)) await finalizeSession(session.id, text, decision.markdown);
-  return buildResponse(session, decision);
+  return buildResponse(updatedSession, decision);
 }

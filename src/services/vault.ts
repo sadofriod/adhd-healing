@@ -17,7 +17,8 @@ function buildFilename(title: string): string {
 
 function buildFrontMatter(title: string): string {
   const now = new Date().toISOString();
-  return `---\ntitle: "${title}"\ndate: ${now}\ntags: [idea, adhd-healing]\n---\n`;
+  const escapedTitle = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return `---\ntitle: "${escapedTitle}"\ndate: ${now}\ntags: [idea, adhd-healing]\n---\n`;
 }
 
 function buildFileContent(title: string, finalMarkdown: string, rawText: string): string {
