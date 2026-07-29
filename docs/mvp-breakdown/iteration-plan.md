@@ -127,7 +127,7 @@ Tasks:
 | Task ID | Description |
 | --- | --- |
 | T-015 | Configure LM Studio client |
-| T-016 | Add embedding generation with fallback |
+| T-016 | Add embedding generation with strict model availability |
 | T-017 | Add clarification and final-distill prompts |
 | T-020 | Implement session create/load behavior |
 | T-021 | Persist user turns |
@@ -237,7 +237,7 @@ Exit criteria:
 | Shortcut loses `session_id` between turns | Clarification context breaks | Keep JSON response contract minimal and document storage clearly | Second turn cannot resume same session |
 | LLM asks too many or low-value questions | User drop-off increases | Cap question count and define focused prompting rules | More than 3 turns are often needed for simple ideas |
 | macOS automation permissions block Reminders | Reminder step degrades | Make reminder path non-blocking and log clearly | Reminder step crashes final response flow |
-| Random-vector fallback lowers retrieval quality | Weak RAG signal | Log fallback use and prioritize fixing embedding model | More than occasional fallback during normal use |
+| Embedding model missing or mismatched | Retrieval path is blocked | Fail fast on startup and keep model names aligned with LM Studio | Service cannot complete startup or embedding requests |
 
 ## 8. Go/No-Go Checklist
 
