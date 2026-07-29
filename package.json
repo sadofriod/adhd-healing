@@ -1,0 +1,26 @@
+{
+  "name": "adhd-healing",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "bun --env-file=.env server.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:push": "prisma db push",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/bun": "latest",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "prisma": "^6.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
