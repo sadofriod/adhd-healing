@@ -1,0 +1,23 @@
+{
+  "name": "adhd-healing",
+  "version": "0.1.0",
+  "description": "Local-first idea clarification and distillation gateway",
+  "type": "module",
+  "scripts": {
+    "start": "bun --env-file=.env server.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "openai": "^4.77.0",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/bun": "latest",
+    "@types/pg": "^8.11.10",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.21.0"
+  }
+}
