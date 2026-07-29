@@ -1,20 +1,17 @@
-import pg from 'pg';
-import { config } from '../config/env.js';
+import { PrismaClient } from '@prisma/client';
 
-const { Pool } = pg;
+type GlobalWithPrisma = typeof globalThis & {
+  prisma?: PrismaClient;
+};
 
-let _pool: pg.Pool | null = null;
+const globalForPrisma = globalThis as GlobalWithPrisma;
 
-export function getPool(): pg.Pool {
-  if (!_pool) {
-    _pool = new Pool({ connectionString: config.databaseUrl });
-  }
-  return _pool;
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }
 
-export async function closePool(): Promise<void> {
-  if (_pool) {
-    await _pool.end();
-    _pool = null;
-  }
+export async function closePrisma(): Promise<void> {
+  await prisma.$disconnect();
 }

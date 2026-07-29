@@ -1,4 +1,5 @@
 import type { DistillRequestData } from '../../types.js';
+import { z } from 'zod';
 
 export class ValidationError extends Error {
   constructor(message: string) {
@@ -7,50 +8,87 @@ export class ValidationError extends Error {
   }
 }
 
-function assertInputMode(mode: FormDataEntryValue | null): asserts mode is 'audio' | 'text' {
-  if (mode !== 'text' && mode !== 'audio') {
-    throw new ValidationError('input_mode must be "text" or "audio"');
+const optionalSessionIdSchema = z.preprocess(
+  value => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  },
+  z.string().uuid('session_id must be a valid UUID').optional()
+);
+
+const basePayloadSchema = z.object({
+  input_mode: z.enum(['text', 'audio']),
+  session_id: optionalSessionIdSchema,
+  text: z.unknown().optional(),
+  audio: z.unknown().optional(),
+});
+
+const textPayloadSchema = basePayloadSchema.extend({
+  input_mode: z.literal('text'),
+  text: z.string().trim().min(1, 'text field is required and must not be empty for text mode'),
+});
+
+const audioPayloadSchema = basePayloadSchema.extend({
+  input_mode: z.literal('audio'),
+  audio: z.instanceof(File, {
+    message: 'audio field is required and must be a file for audio mode',
+  }),
+});
+
+type TextPayload = z.infer<typeof textPayloadSchema>;
+type AudioPayload = z.infer<typeof audioPayloadSchema>;
+
+function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  throw new ValidationError(result.error.issues[0]?.message ?? 'Invalid request payload');
+}
+
+function readPayload(formData: FormData): Record<string, unknown> {
+  return {
+    input_mode: formData.get('input_mode'),
+    session_id: formData.get('session_id'),
+    text: formData.get('text') ?? undefined,
+    audio: formData.get('audio') ?? undefined,
+  };
+}
+
+function parsePayload(formData: FormData): TextPayload | AudioPayload {
+  const payload = readPayload(formData);
+  const basePayload = parseWithSchema(basePayloadSchema, payload);
+  if (basePayload.input_mode === 'text') {
+    return parseWithSchema(textPayloadSchema, payload);
   }
+  return parseWithSchema(audioPayloadSchema, payload);
 }
 
-function isValidText(val: FormDataEntryValue | null): val is string {
-  return typeof val === 'string' && val.trim().length > 0;
+function buildTextRequestData(payload: TextPayload): DistillRequestData {
+  return {
+    inputMode: 'text',
+    text: payload.text,
+    sessionId: payload.session_id,
+  };
 }
 
-function parseSessionId(formData: FormData): string | undefined {
-  const raw = formData.get('session_id');
-  return typeof raw === 'string' ? raw : undefined;
+async function buildAudioRequestData(payload: AudioPayload): Promise<DistillRequestData> {
+  const audioBuffer = Buffer.from(await payload.audio.arrayBuffer());
+  return {
+    inputMode: 'audio',
+    audioBuffer,
+    sessionId: payload.session_id,
+  };
 }
 
-function parseTextInput(formData: FormData, sessionId?: string): DistillRequestData {
-  const text = formData.get('text');
-  if (!isValidText(text)) {
-    throw new ValidationError('text field is required and must not be empty for text mode');
+async function toRequestData(payload: TextPayload | AudioPayload): Promise<DistillRequestData> {
+  if (payload.input_mode === 'text') {
+    return buildTextRequestData(payload);
   }
-  return { inputMode: 'text', text: text.trim(), sessionId };
-}
-
-async function parseAudioInput(formData: FormData, sessionId?: string): Promise<DistillRequestData> {
-  const audioFile = formData.get('audio');
-  if (!(audioFile instanceof File)) {
-    throw new ValidationError('audio field is required and must be a file for audio mode');
-  }
-  const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
-  return { inputMode: 'audio', audioBuffer, sessionId };
-}
-
-async function parseFormData(
-  formData: FormData,
-  inputMode: 'audio' | 'text'
-): Promise<DistillRequestData> {
-  const sessionId = parseSessionId(formData);
-  if (inputMode === 'text') return parseTextInput(formData, sessionId);
-  return parseAudioInput(formData, sessionId);
+  return buildAudioRequestData(payload);
 }
 
 export async function validateDistillRequest(req: Request): Promise<DistillRequestData> {
   const formData = await req.formData();
-  const inputMode = formData.get('input_mode');
-  assertInputMode(inputMode);
-  return parseFormData(formData, inputMode);
+  const payload = parsePayload(formData);
+  return toRequestData(payload);
 }

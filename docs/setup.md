@@ -4,7 +4,8 @@
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| Bun | ≥ 1.0 | Runtime and package manager |
+| Bun | ≥ 1.0 | Runtime |
+| pnpm | ≥ 10 | Package manager |
 | Docker | any | For PostgreSQL pgvector container |
 | LM Studio | ≥ 0.3 | OpenAI-compatible local model gateway |
 | iPhone Shortcuts | iOS 16+ | Client entry point for input |
@@ -65,7 +66,7 @@ PORT=5001
 ## 4. Install dependencies
 
 ```bash
-bun install
+pnpm install
 ```
 
 ## 5. Start the service

@@ -1,4 +1,4 @@
-import { getPool } from '../client.js';
+import { prisma } from '../client.js';
 import type { SessionMessage } from '../../types.js';
 
 export async function insertMessage(
@@ -7,18 +7,19 @@ export async function insertMessage(
   inputMode: string,
   content: string
 ): Promise<void> {
-  await getPool().query(
-    `INSERT INTO session_messages (session_id, role, input_mode, content)
-     VALUES ($1, $2, $3, $4)`,
-    [sessionId, role, inputMode, content]
-  );
+  await prisma.sessionMessage.create({
+    data: {
+      session_id: sessionId,
+      role,
+      input_mode: inputMode,
+      content,
+    },
+  });
 }
 
 export async function getMessagesBySessionId(sessionId: string): Promise<SessionMessage[]> {
-  const result = await getPool().query<SessionMessage>(
-    `SELECT id, session_id, role, input_mode, content, created_at
-     FROM session_messages WHERE session_id = $1 ORDER BY created_at ASC`,
-    [sessionId]
-  );
-  return result.rows;
+  return prisma.sessionMessage.findMany({
+    where: { session_id: sessionId },
+    orderBy: { created_at: 'asc' },
+  });
 }

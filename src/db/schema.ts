@@ -1,3 +1,7 @@
+export const ENABLE_PGCRYPTO = `
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+`;
+
 export const ENABLE_PGVECTOR = `
   CREATE EXTENSION IF NOT EXISTS vector;
 `;

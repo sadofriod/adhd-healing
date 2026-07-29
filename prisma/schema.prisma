@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model IdeaSession {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status     String           @default("clarifying")
+  turn_count Int              @default(0)
+  created_at DateTime         @default(now())
+  updated_at DateTime         @default(now()) @updatedAt
+  messages   SessionMessage[]
+
+  @@map("idea_sessions")
+}
+
+model SessionMessage {
+  id         Int         @id @default(autoincrement())
+  session_id String      @db.Uuid
+  role       String
+  input_mode String
+  content    String
+  created_at DateTime    @default(now())
+  session    IdeaSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id, created_at])
+  @@map("session_messages")
+}
