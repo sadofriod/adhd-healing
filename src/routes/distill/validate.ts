@@ -44,11 +44,35 @@ function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
+function isJsonRequest(req: Request): boolean {
+  const contentType = req.headers.get('content-type');
+  return contentType?.toLowerCase().includes('application/json') ?? false;
+}
+
 function toOptionalString(value: FormDataEntryValue | null): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+function normalizeJsonSessionId(value: unknown): string | undefined | unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+function normalizeJsonPayload(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const payload = value as Record<string, unknown>;
+  return {
+    ...payload,
+    session_id: normalizeJsonSessionId(payload.session_id),
+  };
 }
 
 function readPayload(formData: FormData): Record<string, unknown> {
@@ -95,7 +119,27 @@ async function toRequestData(payload: TextPayload | AudioPayload): Promise<Disti
   return buildAudioRequestData(payload);
 }
 
-export async function validateDistillRequest(req: Request): Promise<DistillRequestData> {
+async function validateJsonRequest(req: Request): Promise<DistillRequestData> {
+  let payload: unknown;
+
+  try {
+    payload = await req.json();
+  } catch {
+    throw new ValidationError('Request body must be valid JSON');
+  }
+
+  const normalizedPayload = normalizeJsonPayload(payload);
+  const basePayload = parseWithSchema(basePayloadSchema, normalizedPayload);
+
+  if (basePayload.input_mode !== 'text') {
+    throw new ValidationError('JSON requests only support text mode');
+  }
+
+  const textPayload = parseWithSchema(textPayloadSchema, normalizedPayload);
+  return buildTextRequestData(textPayload);
+}
+
+async function validateFormDataRequest(req: Request): Promise<DistillRequestData> {
   let formData: FormData;
 
   try {
@@ -106,4 +150,12 @@ export async function validateDistillRequest(req: Request): Promise<DistillReque
 
   const payload = parsePayload(formData);
   return toRequestData(payload);
+}
+
+export async function validateDistillRequest(req: Request): Promise<DistillRequestData> {
+  if (isJsonRequest(req)) {
+    return validateJsonRequest(req);
+  }
+
+  return validateFormDataRequest(req);
 }

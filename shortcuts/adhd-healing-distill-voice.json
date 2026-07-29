@@ -1,0 +1,221 @@
+{
+  "WFWorkflow": {
+    "WFWorkflowClientRelease": "18.0",
+    "WFWorkflowClientVersion": "1302.1.3",
+    "WFWorkflowName": "ADHD Healing Distill Voice",
+    "WFWorkflowIcon": {
+      "WFWorkflowIconStartColor": 4290430695,
+      "WFWorkflowIconGlyphNumber": 61445
+    },
+    "WFWorkflowImportQuestions": [
+      {
+        "WFWorkflowImportQuestionType": "Text",
+        "WFWorkflowImportQuestionPrompt": "输入 iPhone 可访问的 distill 地址，例如 http://192.168.31.20:5001/distill",
+        "WFWorkflowImportQuestionDefaultValue": "http://YOUR-MAC-IP:5001/distill",
+        "WFWorkflowImportQuestionVariable": "baseUrl"
+      }
+    ],
+    "WFWorkflowInputContentItemClasses": [],
+    "WFWorkflowMinimumClientVersion": 900,
+    "WFWorkflowMinimumClientVersionString": "900",
+    "WFWorkflowOutputContentItemClasses": [],
+    "WFWorkflowHasOutputFallback": false,
+    "WFWorkflowTypes": [
+      "QuickActions"
+    ],
+    "WFWorkflowHasShortcutInputVariables": false,
+    "WFWorkflowActions": [
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.text",
+        "WFWorkflowActionParameters": {
+          "WFTextActionText": "先把你的想法说出来，或直接输入。"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "Prompt"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.text",
+        "WFWorkflowActionParameters": {
+          "WFTextActionText": ""
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "SessionID"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.repeat.count",
+        "WFWorkflowActionParameters": {
+          "WFRepeatCount": 30,
+          "GroupingIdentifier": "distill-loop",
+          "WFControlFlowMode": 0
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.alert",
+        "WFWorkflowActionParameters": {
+          "WFAlertActionTitle": "当前问题",
+          "WFAlertActionMessage": "{Prompt}",
+          "WFAlertActionCancelButtonShown": false
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.dictatetext",
+        "WFWorkflowActionParameters": {
+          "WFDictateTextStopListening": "After Pause"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "Answer"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+        "WFWorkflowActionParameters": {
+          "WFHTTPMethod": "POST",
+          "WFURL": "{baseUrl}",
+          "WFHTTPHeaders": {
+            "Content-Type": "application/json"
+          },
+          "WFHTTPBodyType": "JSON",
+          "WFJSONBody": {
+            "input_mode": "text",
+            "session_id": "{SessionID}",
+            "text": "{Answer}"
+          }
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "Response"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariable": "Response"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "session_id"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "SessionID"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariable": "Response"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "assistant_message"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "Prompt"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariable": "Response"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "response_type"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+        "WFWorkflowActionParameters": {
+          "WFCondition": "Equals",
+          "WFConditionalActionString": "final",
+          "GroupingIdentifier": "distill-final-check",
+          "WFControlFlowMode": 0
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariable": "Response"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "final_markdown"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setvariable",
+        "WFWorkflowActionParameters": {
+          "WFVariableName": "FinalMarkdown"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.text",
+        "WFWorkflowActionParameters": {
+          "WFTextActionText": "{FinalMarkdown}"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setclipboard",
+        "WFWorkflowActionParameters": {}
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.showresult",
+        "WFWorkflowActionParameters": {
+          "Text": "{FinalMarkdown}"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.stop",
+        "WFWorkflowActionParameters": {}
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+        "WFWorkflowActionParameters": {
+          "GroupingIdentifier": "distill-final-check",
+          "WFControlFlowMode": 2
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.repeat.count",
+        "WFWorkflowActionParameters": {
+          "GroupingIdentifier": "distill-loop",
+          "WFControlFlowMode": 2
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.alert",
+        "WFWorkflowActionParameters": {
+          "WFAlertActionTitle": "需要重新开始",
+          "WFAlertActionMessage": "已达到 30 轮上限，请重新运行快捷指令。",
+          "WFAlertActionCancelButtonShown": false
+        }
+      }
+    ]
+  }
+}

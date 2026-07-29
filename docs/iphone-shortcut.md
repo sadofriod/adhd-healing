@@ -1,5 +1,33 @@
 # iPhone 快捷指令搭建说明
 
+## 0. 直接可导入版本
+
+仓库现在提供了一个可直接导入的文字版快捷指令：
+
+1. 文字版产物：`shortcuts/adhd-healing-distill-text.shortcut`
+2. 文字版源定义：`shortcuts/adhd-healing-distill-text.json`
+3. 语音版产物：`shortcuts/adhd-healing-distill-voice.shortcut`
+4. 语音版源定义：`shortcuts/adhd-healing-distill-voice.json`
+5. 重新生成命令：`pnpm generate:shortcut`
+
+文字版会：
+
+1. 在导入时询问你的 `Base URL`
+2. 以 `application/json` 调用 `POST /distill`
+3. 自动保存 `session_id`
+4. 多轮追问直到返回最终 Markdown
+5. 展示最终结果并复制到剪贴板
+
+语音版会：
+
+1. 先展示当前问题
+2. 使用 iPhone 原生 `Dictate Text` 做语音输入
+3. 将听写结果作为 `text` 字段发到 `/distill`
+4. 自动保存 `session_id`
+5. 直到服务端返回最终 Markdown
+
+注意：当前语音版走的是 `iPhone 听写文本 -> /distill text mode`，不是把原始录音文件上传给服务端。这样可以保持快捷指令成品稳定可导入。
+
 这份说明把仓库里的 `/distill` 接口契约展开成一套可直接在 iPhone `快捷指令` App 里照着搭的流程。
 
 ## 1. 目标
