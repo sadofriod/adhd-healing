@@ -1,28 +1,13 @@
 import { useState } from 'react';
-import type { DistillResponse, InputMode } from '../../types.js';
+import type { DistillApiResponse } from '../../types.js';
 import type { ConversationState, TimelineEntry } from '../types.js';
-
-type SubmitAudioFn = (blob: Blob, fileName: string) => Promise<void>;
-type SubmitTextFn = (text: string) => Promise<void>;
-
-type SubmitPayload =
-  | {
-      readonly inputMode: 'text';
-      readonly text: string;
-    }
-  | {
-      readonly inputMode: 'audio';
-      readonly blob: Blob;
-      readonly fileName: string;
-    };
 
 type DistillSessionState = {
   readonly conversation: ConversationState;
   readonly errorMessage: string | null;
   readonly isSubmitting: boolean;
   readonly resetSession: () => void;
-  readonly submitAudio: SubmitAudioFn;
-  readonly submitText: SubmitTextFn;
+  readonly submitText: (text: string) => Promise<void>;
 };
 
 const INITIAL_PROMPT = '先把你的想法说出来。我会逐轮追问，直到变成一份可执行的结果。';
@@ -30,119 +15,53 @@ const COMPLETED_PROMPT = '这一轮已经完成。准备好了就直接开始下
 
 function createTimelineEntry(
   role: 'assistant' | 'user',
-  mode: InputMode | 'system',
   content: string,
   turnIndex: number
 ): TimelineEntry {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    mode,
-    content,
-    turnIndex,
-  };
+  return { id: crypto.randomUUID(), role, content, turnIndex };
 }
 
 function createInitialConversation(): ConversationState {
   return {
-    sessionId: null,
     prompt: INITIAL_PROMPT,
-    entries: [createTimelineEntry('assistant', 'system', INITIAL_PROMPT, 0)],
-    finalResponse: null,
+    entries: [createTimelineEntry('assistant', INITIAL_PROMPT, 0)],
+    finalText: null,
   };
 }
 
 function getUserTurnIndex(entries: readonly TimelineEntry[]): number {
-  return entries.filter(entry => entry.role === 'user').length + 1;
+  return entries.filter(e => e.role === 'user').length + 1;
 }
 
-function buildTextRequest(text: string, sessionId: string | null): RequestInit {
-  return {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      input_mode: 'text',
-      text,
-      session_id: sessionId,
-    }),
-  };
-}
-
-function buildAudioRequest(blob: Blob, fileName: string, sessionId: string | null): RequestInit {
-  const formData = new FormData();
-  formData.set('input_mode', 'audio');
-  formData.set('audio', new File([blob], fileName, { type: blob.type || 'audio/webm' }));
-
-  if (sessionId) {
-    formData.set('session_id', sessionId);
-  }
-
-  return {
-    method: 'POST',
-    body: formData,
-  };
-}
-
-function getJsonErrorMessage(payload: unknown): string | null {
-  const payloadRecord = toPayloadRecord(payload);
-  if (!payloadRecord) return null;
-
-  const errorValue = payloadRecord.error;
-  return typeof errorValue === 'string' ? errorValue : null;
-}
-
-function isPayloadRecord(payload: unknown): payload is Record<string, unknown> {
-  return Boolean(payload) && typeof payload === 'object' && !Array.isArray(payload);
+function isPlainObject(payload: unknown): payload is Record<string, unknown> {
+  return Boolean(payload) && typeof payload === 'object';
 }
 
 function toPayloadRecord(payload: unknown): Record<string, unknown> | null {
-  return isPayloadRecord(payload) ? payload : null;
+  if (!isPlainObject(payload) || Array.isArray(payload)) return null;
+  return payload;
 }
 
-async function parseDistillResponse(response: Response): Promise<DistillResponse> {
-  const payload = (await response.json().catch(() => null)) as unknown;
-  if (!response.ok) {
-    throw new Error(getJsonErrorMessage(payload) ?? '请求失败，请检查服务端日志。');
-  }
-
-  return payload as DistillResponse;
+function extractErrorMessage(payload: unknown): string {
+  const record = toPayloadRecord(payload);
+  if (!record) return '请求失败，请检查服务端日志。';
+  if (typeof record.error === 'string') return record.error;
+  return '请求失败，请检查服务端日志。';
 }
 
-function buildUserEntry(payload: SubmitPayload, turnIndex: number): TimelineEntry {
-  if (payload.inputMode === 'text') {
-    return createTimelineEntry('user', 'text', payload.text, turnIndex);
-  }
-
-  return createTimelineEntry('user', 'audio', `上传了一段录音：${payload.fileName}`, turnIndex);
+async function parseResponse(response: Response): Promise<DistillApiResponse> {
+  const payload = await response.json().catch(() => null) as unknown;
+  if (response.ok) return payload as DistillApiResponse;
+  throw new Error(extractErrorMessage(payload));
 }
 
-function buildConversationState(
-  conversation: ConversationState,
-  userEntry: TimelineEntry,
-  response: DistillResponse
-): ConversationState {
-  const nextPrompt = response.is_complete ? COMPLETED_PROMPT : response.assistant_message;
-  const assistantEntry = createTimelineEntry(
-    'assistant',
-    'system',
-    response.assistant_message,
-    response.turn_index
-  );
-
-  return {
-    sessionId: response.session_id,
-    prompt: nextPrompt,
-    entries: [...conversation.entries, userEntry, assistantEntry],
-    finalResponse: response.is_complete ? response : null,
-  };
-}
-
-function getSubmitRequest(payload: SubmitPayload, sessionId: string | null): RequestInit {
-  if (payload.inputMode === 'text') {
-    return buildTextRequest(payload.text, sessionId);
-  }
-
-  return buildAudioRequest(payload.blob, payload.fileName, sessionId);
+async function fetchDistill(text: string, reset: boolean): Promise<DistillApiResponse> {
+  const response = await fetch('/distill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, reset }),
+  });
+  return parseResponse(response);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -154,18 +73,28 @@ export function useDistillSession(): DistillSessionState {
   const [conversation, setConversation] = useState<ConversationState>(createInitialConversation);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingReset, setPendingReset] = useState(false);
 
-  async function submitTurn(payload: SubmitPayload): Promise<void> {
+  async function submitText(text: string): Promise<void> {
     const turnIndex = getUserTurnIndex(conversation.entries);
-    const userEntry = buildUserEntry(payload, turnIndex);
+    const userEntry = createTimelineEntry('user', text, turnIndex);
+    const isReset = pendingReset;
 
     setIsSubmitting(true);
     setErrorMessage(null);
+    setPendingReset(false);
 
     try {
-      const response = await fetch('/distill', getSubmitRequest(payload, conversation.sessionId));
-      const distillResponse = await parseDistillResponse(response);
-      setConversation(current => buildConversationState(current, userEntry, distillResponse));
+      const result = await fetchDistill(text, isReset);
+      const isComplete = result.status === 'FINISH';
+      const nextPrompt = isComplete ? COMPLETED_PROMPT : result.text;
+      const assistantEntry = createTimelineEntry('assistant', result.text, turnIndex);
+
+      setConversation(current => ({
+        prompt: nextPrompt,
+        entries: [...current.entries, userEntry, assistantEntry],
+        finalText: isComplete ? result.text : null,
+      }));
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -173,17 +102,10 @@ export function useDistillSession(): DistillSessionState {
     }
   }
 
-  async function submitText(text: string): Promise<void> {
-    await submitTurn({ inputMode: 'text', text });
-  }
-
-  async function submitAudio(blob: Blob, fileName: string): Promise<void> {
-    await submitTurn({ inputMode: 'audio', blob, fileName });
-  }
-
   function resetSession(): void {
     setConversation(createInitialConversation());
     setErrorMessage(null);
+    setPendingReset(true);
   }
 
   return {
@@ -191,7 +113,6 @@ export function useDistillSession(): DistillSessionState {
     errorMessage,
     isSubmitting,
     resetSession,
-    submitAudio,
     submitText,
   };
 }

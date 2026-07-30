@@ -1,43 +1,26 @@
-import type { Session } from '../types.js';
-import {
-  findSessionById,
-  createSession,
-  incrementTurnCount,
-} from '../db/queries/sessions.js';
+export type SessionMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
-export class SessionNotFoundError extends Error {
-  constructor(sessionId: string) {
-    super(`Session not found: ${sessionId}`);
-    this.name = 'SessionNotFoundError';
-  }
+let currentSession: SessionMessage[] | null = null;
+
+export function getSession(): SessionMessage[] {
+  if (!currentSession) currentSession = [];
+  return currentSession;
 }
 
-export class SessionStateError extends Error {
-  constructor(sessionId: string, status: Session['status']) {
-    super(`Session ${sessionId} is already ${status} and cannot accept more input`);
-    this.name = 'SessionStateError';
-  }
+export function resetSession(): void {
+  currentSession = [];
+  console.log('[session] 开启新一轮脑暴 Session');
 }
 
-function assertSessionIsActive(session: Session): Session {
-  if (session.status !== 'clarifying') {
-    throw new SessionStateError(session.id, session.status);
-  }
-
-  return session;
+export function appendToSession(role: 'user' | 'assistant', content: string): void {
+  if (!currentSession) currentSession = [];
+  currentSession.push({ role, content });
 }
 
-async function resumeSession(sessionId: string): Promise<Session> {
-  const session = await findSessionById(sessionId);
-  if (!session) throw new SessionNotFoundError(sessionId);
-  return assertSessionIsActive(session);
+export function clearSession(): void {
+  currentSession = null;
 }
 
-export async function loadOrCreateSession(sessionId?: string): Promise<Session> {
-  if (sessionId) return resumeSession(sessionId);
-  return createSession();
-}
-
-export async function advanceTurn(sessionId: string): Promise<void> {
-  await incrementTurnCount(sessionId);
-}

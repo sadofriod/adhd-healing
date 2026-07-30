@@ -2,7 +2,6 @@ import type { JSX } from 'react';
 
 type CurrentPromptCardProps = {
   readonly prompt: string;
-  readonly sessionId: string | null;
   readonly isBusy: boolean;
   readonly isComplete: boolean;
 };
@@ -26,7 +25,6 @@ export function CurrentPromptCard(props: CurrentPromptCardProps): JSX.Element {
         <span className="status-pill">{statusLabel}</span>
       </div>
       <p className="prompt-copy">{props.prompt}</p>
-      <p className="session-meta">{props.sessionId ? `session_id: ${props.sessionId}` : '首轮输入会自动创建新会话。'}</p>
     </section>
   );
 }

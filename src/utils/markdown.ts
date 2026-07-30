@@ -124,15 +124,26 @@ export function buildReminderDescription(mdText: string): string {
   ].join('\n');
 }
 
+function getKernelDetails(mdText: string): string {
+  const section = extractSection(mdText, TODAY_HEADER);
+  if (!section) return '';
+  return getSectionDetails(section);
+}
+
+function buildDetailsLine(details: string): string | null {
+  if (!details) return null;
+  return `相关想法摘要：${details}`;
+}
+
 export function buildRagReference(mdText: string): string {
   const title = extractTitle(mdText);
-  const milestone = extractMilestone(mdText) ?? DEFAULT_RAG_REFERENCE_MILESTONE;
-  const kernelSection = extractSection(mdText, TODAY_HEADER);
-  const details = kernelSection ? getSectionDetails(kernelSection) : '';
+  const rawMilestone = extractMilestone(mdText);
+  const milestone = rawMilestone ?? DEFAULT_RAG_REFERENCE_MILESTONE;
+  const details = getKernelDetails(mdText);
 
   return [
     `相关想法标题：${title}`,
-    details ? `相关想法摘要：${details}` : null,
+    buildDetailsLine(details),
     `相关想法里程碑：${milestone}`,
   ].filter(Boolean).join('\n');
 }

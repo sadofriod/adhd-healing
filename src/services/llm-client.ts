@@ -1,14 +1,17 @@
-import OpenAI from 'openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { config } from '../config/env.js';
 
-let _client: OpenAI | null = null;
+let _client: ReturnType<typeof createOpenAI> | null = null;
 
-export function getLlmClient(): OpenAI {
+export function getLlmClient(): ReturnType<typeof createOpenAI> {
   if (!_client) {
-    _client = new OpenAI({
-      baseURL: config.lmStudioBaseUrl,
-      apiKey: 'lm-studio',
+    _client = createOpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: config.deepseekApiKey,
     });
   }
   return _client;
 }
+
+export const CHAT_MODEL = 'deepseek-chat';
+

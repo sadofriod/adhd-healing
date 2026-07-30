@@ -3,17 +3,11 @@ import type { TimelineEntry } from '../types.js';
 
 type ConversationTimelineProps = {
   readonly entries: readonly TimelineEntry[];
-  readonly sessionId: string | null;
 };
 
 function getRoleLabel(role: TimelineEntry['role']): string {
   if (role === 'assistant') return 'Assistant';
   return 'You';
-}
-
-function getModeLabel(mode: TimelineEntry['mode']): string {
-  if (mode === 'system') return 'prompt';
-  return mode;
 }
 
 export function ConversationTimeline(props: ConversationTimelineProps): JSX.Element {
@@ -24,7 +18,6 @@ export function ConversationTimeline(props: ConversationTimelineProps): JSX.Elem
         <div className="timeline-meta-row">
           <span>{getRoleLabel(entry.role)}</span>
           <span>turn {entry.turnIndex}</span>
-          <span>{getModeLabel(entry.mode)}</span>
         </div>
         <p>{entry.content}</p>
       </li>
@@ -38,7 +31,9 @@ export function ConversationTimeline(props: ConversationTimelineProps): JSX.Elem
           <p className="section-kicker">Timeline</p>
           <h2>对话轨迹</h2>
         </div>
-        <span className="session-chip">{props.sessionId ? 'session active' : 'awaiting first turn'}</span>
+        <span className="session-chip">
+          {props.entries.length > 1 ? 'session active' : 'awaiting first turn'}
+        </span>
       </div>
       <ol className="timeline-list">{timelineItems}</ol>
     </section>

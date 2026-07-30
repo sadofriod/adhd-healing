@@ -1,166 +1,94 @@
-# Local Environment Setup
+# Setup Guide
 
 ## Prerequisites
 
 | Tool | Version | Notes |
-| --- | --- | --- |
+|---|---|---|
 | Bun | ≥ 1.0 | Runtime |
 | pnpm | ≥ 10 | Package manager |
-| Docker | any | For PostgreSQL pgvector container |
-| Swift / Xcode Command Line Tools | Installed on macOS | Compiles the local Speech transcription helper |
-| LM Studio | ≥ 0.3 | OpenAI-compatible local model gateway |
-| Modern browser | Safari / Chrome / Edge | Client entry point for text and audio input |
+| macOS | — | Required for Reminders sync via `osascript` |
+| DeepSeek API Key | — | [platform.deepseek.com](https://platform.deepseek.com) |
 
-## 1. Start PostgreSQL + pgvector
-
-```bash
-docker run -d \
-  --name pgvector \
-  -e POSTGRES_USER=adhd \
-  -e POSTGRES_PASSWORD=adhd \
-  -e POSTGRES_DB=adhd_healing \
-  -p 5432:5432 \
-  pgvector/pgvector:pg16
-```
-
-Verify connectivity:
-
-```bash
-psql "******localhost:5432/adhd_healing" -c "SELECT version();"
-```
-
-## 2. Start LM Studio
-
-1. Open LM Studio and load two models:
-   - **Chat model**: `qwen2.5-7b-instruct` (or any instruction-tuned chat model)
-   - **Embedding model**: `nomic-ai/nomic-embed-text-v1.5` (768-dimensional output required)
-2. Enable the local server (default: `http://localhost:1234/v1`).
-3. Confirm the models are listed in `GET http://localhost:1234/v1/models`.
-
-> Audio transcription no longer depends on LM Studio Whisper. The service compiles a small Swift helper and calls macOS Speech for on-device transcription.
-
-## 3. Configure environment
-
-Copy the example file and fill in your values:
+## 1. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Required variables:
+Edit `.env`:
 
-```
+```env
 BRAIN_VAULT_PATH=/absolute/path/to/your/vault
-DATABASE_URL=******localhost:5432/adhd_healing
-```
-
-Optional variables (shown with defaults):
-
-```
-LM_STUDIO_BASE_URL=http://localhost:1234/v1
-EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
-CHAT_MODEL=qwen2.5-7b-instruct
-MAX_CLARIFICATION_TURNS=3
+DEEPSEEK_API_KEY=sk-...
 PORT=5001
 ```
 
-## 4. Install dependencies
+## 2. Install and start
 
 ```bash
 pnpm install
-```
-
-## 5. Start the service
-
-```bash
 pnpm start
 ```
 
-On first startup, macOS may prompt for Speech Recognition permission when the transcription helper runs its health check. Grant it, or the server will fail fast before opening the HTTP port.
-
-Expected output:
+Expected startup output:
 
 ```
-[db] Initializing database...
-[db] Database initialized.
-[server] Listening on port 5001
+[startup] DeepSeek API key configured: sk-abc...
+[startup] Brain vault path: /path/to/vault
+[startup] Dependencies verified.
+[server] 🚀 Gateway listening on http://localhost:5001
 ```
 
-## 6. Open the web client
+## 3. Apple Reminders permissions
 
-Open the React client in a browser that can reach your Mac:
+On first run, macOS may prompt for Automation permission for Reminders. Grant it. If the step fails, the server still returns the full final response — check `[reminders]` log lines.
 
-1. On the same machine, open `http://localhost:5001/`.
-2. On your iPhone, open `http://<mac-ip>:5001/` in Safari while on the same LAN.
-3. If you want an app-like launcher on iPhone, use Safari `Share -> Add to Home Screen`.
-4. Allow microphone access when Safari asks, or use the file picker fallback for audio uploads.
+## 4. iPhone Shortcuts Setup（快捷指令配置）
 
-For a focused walkthrough of the page behavior, see [docs/web-entry.md](./web-entry.md).
+Name the shortcut: `🧠 智能脑暴`
 
-Each loop works like this:
+Steps:
 
-1. **Read the current question** shown in the prompt card.
-2. **Answer with text** through the textarea, or **answer with audio** by recording or uploading a file.
-3. **Let the page keep `session_id`** in memory for follow-up turns.
-4. **Continue** when `is_complete` is `false` and a new clarification prompt appears.
-5. **Stop** when `is_complete` is `true` and the final Markdown is rendered in the result panel.
+1. **Receive input**: Tap ⓘ at the bottom, enable accepting "Shortcut Input".
+2. **Text action**: Insert a Text action and select the magic variable "Shortcut Input".
+3. **If** — If the Text above has no value:
+   - **Set variable** `SiriSays` = `"嗨，你现在有什么想法？"`
+   - **Set variable** `isReset` = `true`
+4. **Otherwise**:
+   - **Set variable** `SiriSays` = Shortcut Input
+   - **Set variable** `isReset` = `false`
+5. **End If**
+6. **Dictate Text**: Set the prompt to variable `SiriSays`. (Siri will speak the question, then open the mic.)
+7. **Get Contents of URL**:
+   - URL: `http://<your-mac-ip>:5001/distill`
+   - Method: POST / Request Body: JSON
+   - Key 1: `text` → Dictated Text
+   - Key 2: `reset` → variable `isReset`
+8. **Get Dictionary from Input** → pass the URL contents.
+9. **Get Dictionary Value** → key `status` → store as `currentStatus`.
+10. **Get Dictionary Value** → key `text` → store as `serverReply`.
+11. **If** `currentStatus` equals `CONTINUE`:
+    - **Run Shortcut**: Select `🧠 智能脑暴` (itself!), pass `serverReply` as input.
+12. **Otherwise** (FINISH):
+    - **Show Alert**: display `serverReply` (the final Milestone report).
+13. **End If**
 
-### Request contract used by the web client
+> The recursive self-call avoids the iOS Shortcuts loop-crash bug and naturally handles multi-turn conversation.
 
-- Text turns send `application/json` to `POST /distill`.
-- Audio turns send `multipart/form-data` to `POST /distill`.
-- Both modes include `session_id` after the first turn.
+## 5. Verify end-to-end
 
-### Response contract
-
-```json
-{
-  "session_id": "uuid",
-  "response_type": "clarify",
-  "assistant_message": "你希望最终产出成什么形式？",
-  "turn_index": 1,
-  "is_complete": false,
-  "final_markdown": null,
-  "final_title": null,
-  "milestone": null
-}
-```
-
-When `response_type` is `"final"`:
-
-```json
-{
-  "session_id": "uuid",
-  "response_type": "final",
-  "assistant_message": "蒸馏完成",
-  "turn_index": 3,
-  "is_complete": true,
-  "final_markdown": "### 🎯 今日灵感内核\n...",
-  "final_title": "核心标题",
-  "milestone": "20分钟行动项内容"
-}
-```
-
-## 7. Verify end-to-end
-
-| Check | Command / Action |
-| --- | --- |
-| Health | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"input_mode":"text","text":"我有一个想法"}'` |
-| Session persisted | `psql $DATABASE_URL -c "SELECT id, status, turn_count FROM idea_sessions;"` |
+| Check | How |
+|---|---|
+| Server running | `curl http://localhost:5001/` |
+| Distill works | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"text":"测试想法","reset":true}'` |
 | Vault file created | `ls $BRAIN_VAULT_PATH` |
-| Final idea in DB | `psql $DATABASE_URL -c "SELECT id, created_at FROM my_ideas;"` |
+| Reminder added | Open Reminders app on Mac |
 
-## 8. Apple Reminders permissions
-
-On first run, macOS may prompt for Automation permission for Reminders. Grant it when asked. If the reminder step fails, the server still returns the full final response — check logs for `[reminders]` lines.
-
-## 9. Error reference
+## 6. Error reference
 
 | Error | Likely cause |
-| --- | --- |
-| `Missing required environment variable: DATABASE_URL` | `.env` not loaded or variable missing |
-| `Session not found: <id>` | `session_id` was dropped because the page was refreshed or the session was reset mid-conversation |
-| embedding request failed | Embedding model not loaded in LM Studio, or model name does not match current configuration |
+|---|---|
+| `Invalid environment variables` | `.env` missing `DEEPSEEK_API_KEY` or `BRAIN_VAULT_PATH` |
+| `400` from `/distill` | `text` field missing or empty |
 | `[reminders] Failed to add reminder` | macOS Automation permission not granted |
-| `Speech recognition authorization failed` | Grant macOS Speech Recognition permission to the terminal process or rerun startup |
-| `400` from `/distill` | `input_mode`, `text`, or `audio` field missing or wrong |
+| DeepSeek API error | Invalid API key or rate limit |

@@ -1,5 +1,4 @@
 import type { JSX } from 'react';
-import { AudioComposer } from './components/AudioComposer.js';
 import { ConversationTimeline } from './components/ConversationTimeline.js';
 import { CurrentPromptCard } from './components/CurrentPromptCard.js';
 import { FinalMarkdownPanel } from './components/FinalMarkdownPanel.js';
@@ -24,24 +23,20 @@ export function App(): JSX.Element {
     errorMessage,
     isSubmitting,
     resetSession,
-    submitAudio,
     submitText,
   } = useDistillSession();
-  const isComplete = conversation.finalResponse !== null;
+  const isComplete = conversation.finalText !== null;
   const isComposerDisabled = getComposerDisabled(isSubmitting, isComplete);
-  const errorBannerClassName = getErrorBannerClassName(errorMessage);
-  const resetButtonClassName = getResetButtonClassName(isComplete);
 
   return (
     <div className="app-shell">
       <div className="ambient-orb ambient-orb-left" aria-hidden="true" />
       <div className="ambient-orb ambient-orb-right" aria-hidden="true" />
       <header className="hero-card panel-surface">
-        <p className="eyebrow">Local-first idea distillation</p>
-        <h1>把 iPhone 入口改成一个可对话的网页。</h1>
+        <p className="eyebrow">Cloud-powered idea distillation</p>
+        <h1>把想法蒸馏成可执行的 Milestone。</h1>
         <p className="hero-copy">
-          同一个页面里支持文字倾倒和录音上传，服务端继续负责多轮澄清、知识沉淀和
-          Reminders 同步。
+          输入你的想法，AI 会逐轮追问，直到提炼出一个 20 分钟内可执行的具体任务。
         </p>
       </header>
 
@@ -49,36 +44,31 @@ export function App(): JSX.Element {
         <section className="left-column">
           <CurrentPromptCard
             prompt={conversation.prompt}
-            sessionId={conversation.sessionId}
             isBusy={isSubmitting}
             isComplete={isComplete}
           />
 
-          <p className={errorBannerClassName}>{errorMessage ?? ''}</p>
+          <p className={getErrorBannerClassName(errorMessage)}>{errorMessage ?? ''}</p>
 
-          <div className="composer-grid">
-            <TextComposer
-              disabled={isComposerDisabled}
-              prompt={conversation.prompt}
-              onSubmit={submitText}
-            />
-            <AudioComposer
-              disabled={isComposerDisabled}
-              onSubmit={submitAudio}
-            />
-          </div>
+          <TextComposer
+            disabled={isComposerDisabled}
+            prompt={conversation.prompt}
+            onSubmit={submitText}
+          />
 
-          <button className={resetButtonClassName} disabled={!isComplete} onClick={resetSession} type="button">
+          <button
+            className={getResetButtonClassName(isComplete)}
+            disabled={!isComplete}
+            onClick={resetSession}
+            type="button"
+          >
             开始新一轮蒸馏
           </button>
         </section>
 
         <aside className="right-column">
-          <ConversationTimeline
-            entries={conversation.entries}
-            sessionId={conversation.sessionId}
-          />
-          <FinalMarkdownPanel response={conversation.finalResponse} />
+          <ConversationTimeline entries={conversation.entries} />
+          <FinalMarkdownPanel finalText={conversation.finalText} />
         </aside>
       </main>
     </div>

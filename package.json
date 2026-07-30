@@ -1,21 +1,18 @@
 {
   "name": "adhd-healing",
-  "version": "0.1.0",
-  "description": "Local-first idea clarification and distillation gateway",
+  "version": "0.2.0",
+  "description": "Cloud-first idea clarification gateway powered by DeepSeek",
   "type": "module",
   "packageManager": "pnpm@10.22.0",
   "scripts": {
     "build:web": "bun scripts/build-web.ts",
     "start": "pnpm run build:web && bun --env-file=.env server.ts",
-    "test": "DATABASE_URL=postgresql://test:test@localhost:5432/adhd_healing BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
-    "test:e2e": "pnpm run build:web && DATABASE_URL=postgresql://test:test@localhost:5432/adhd_healing BRAIN_VAULT_PATH=$PWD/.tmp/e2e-vault bun test ./src/e2e/web-distill.e2e.ts",
-    "postinstall": "DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder prisma generate",
+    "test": "DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@prisma/client": "^6.12.0",
-    "openai": "^4.77.0",
-    "pg": "^8.22.0",
+    "@ai-sdk/openai": "^1.3.22",
+    "ai": "^4.3.16",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^3.24.1"
@@ -23,13 +20,10 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/bun": "latest",
-    "@types/pg": "^8.20.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
-    "playwright-core": "^1.62.0",
-    "prisma": "^6.12.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.21.0"
   }

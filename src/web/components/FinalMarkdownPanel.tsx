@@ -1,67 +1,44 @@
 import type { JSX } from 'react';
-import type { DistillResponse } from '../../types.js';
 
 type FinalMarkdownPanelProps = {
-  readonly response: DistillResponse | null;
+  readonly finalText: string | null;
 };
 
-type FinalMarkdownView = {
-  readonly cardClassName: string;
-  readonly markdown: string;
-  readonly milestone: string;
-  readonly placeholder: string;
-  readonly statusLabel: string;
-  readonly title: string;
-};
-
-const EMPTY_VIEW: FinalMarkdownView = {
-  cardClassName: 'panel-surface result-card result-card-empty',
-  markdown: '',
-  milestone: '等待会话完成后提取',
-  placeholder: '完成多轮澄清后，最终结果会在这里展开，方便直接复制到你的知识库里。',
-  statusLabel: 'waiting',
-  title: '最终 Markdown',
-};
-
-function getReadyTitle(response: DistillResponse): string {
-  return response.final_title ?? '蒸馏结果';
+function getCardClassName(hasResult: boolean): string {
+  if (hasResult) return 'panel-surface result-card';
+  return 'panel-surface result-card result-card-empty';
 }
 
-function getReadyMilestone(response: DistillResponse): string {
-  return response.milestone ?? '未提取到可执行里程碑';
+function getStatusLabel(hasResult: boolean): string {
+  if (hasResult) return 'ready';
+  return 'waiting';
 }
 
-function createReadyView(response: DistillResponse): FinalMarkdownView {
-  return {
-    cardClassName: 'panel-surface result-card',
-    markdown: response.final_markdown ?? '',
-    milestone: getReadyMilestone(response),
-    placeholder: '',
-    statusLabel: 'ready',
-    title: getReadyTitle(response),
-  };
+function ResultContent({ finalText }: { finalText: string }): JSX.Element {
+  return <article className="markdown-output">{finalText}</article>;
 }
 
-function getFinalMarkdownView(response: DistillResponse | null): FinalMarkdownView {
-  if (!response) return EMPTY_VIEW;
-  return createReadyView(response);
+function EmptyContent(): JSX.Element {
+  return (
+    <p className="result-placeholder">
+      完成多轮澄清后，最终结果会在这里展开，方便直接复制到你的知识库里。
+    </p>
+  );
 }
 
 export function FinalMarkdownPanel(props: FinalMarkdownPanelProps): JSX.Element {
-  const view = getFinalMarkdownView(props.response);
+  const hasResult = props.finalText !== null;
 
   return (
-    <section className={view.cardClassName}>
+    <section className={getCardClassName(hasResult)}>
       <div className="panel-heading">
         <div>
           <p className="section-kicker">Final output</p>
-          <h2>{view.title}</h2>
+          <h2>蒸馏结果</h2>
         </div>
-        <span className="status-pill">{view.statusLabel}</span>
+        <span className="status-pill">{getStatusLabel(hasResult)}</span>
       </div>
-      <p className="result-meta">Milestone: {view.milestone}</p>
-      <p className="result-placeholder" hidden={!view.placeholder}>{view.placeholder}</p>
-      <article className="markdown-output" hidden={!view.markdown}>{view.markdown}</article>
+      {hasResult ? <ResultContent finalText={props.finalText as string} /> : <EmptyContent />}
     </section>
   );
 }

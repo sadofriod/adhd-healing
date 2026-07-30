@@ -1,27 +1,20 @@
-import type { LlmDecision } from '../../types.js';
+import { saveToLocalVault } from '../../services/vault.js';
+import { syncToAppleReminders } from '../../services/reminders.js';
 
-type FinalizeWritePipeline = Readonly<{
-  writeToVault: () => Promise<void>;
-  writeIdeaRecord: () => Promise<void>;
-  syncReminder: () => Promise<void>;
-  commitSessionCompletion: () => Promise<void>;
-}>;
+export async function runFinalizeWritePipeline(opts: {
+  title: string;
+  markdown: string;
+  milestone: string;
+}): Promise<void> {
+  const { title, markdown, milestone } = opts;
 
-export function getAssistantRecordContent(decision: LlmDecision): string {
-  if (decision.type === 'final') return decision.markdown;
-  return decision.message;
-}
+  await saveToLocalVault(title, markdown, '');
 
-export function getResponseTurnIndex(turnCount: number, decision: LlmDecision): number {
-  if (decision.type === 'final') return turnCount;
-  return turnCount + 1;
-}
-
-export async function runFinalizeWritePipeline(
-  pipeline: FinalizeWritePipeline
-): Promise<void> {
-  await pipeline.writeToVault();
-  await pipeline.writeIdeaRecord();
-  await pipeline.syncReminder();
-  await pipeline.commitSessionCompletion();
+  if (milestone) {
+    try {
+      await syncToAppleReminders(milestone, markdown.slice(0, 200));
+    } catch (error) {
+      console.error('[reminders] Error syncing reminder:', error);
+    }
+  }
 }

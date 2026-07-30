@@ -1,7 +1,6 @@
 import { config } from './src/config/env.js';
-import { initDatabase } from './src/db/init.js';
-import { handleDistill } from './src/routes/distill/index.js';
 import { verifyStartupDependencies } from './src/services/startup.js';
+import { handleDistill } from './src/routes/distill/index.js';
 import { handleWebAsset } from './src/web/static.js';
 
 async function handleNonDistillRoute(req: Request, pathname: string): Promise<Response | null> {
@@ -22,7 +21,6 @@ async function handleDistillRoute(req: Request): Promise<Response> {
   return new Response('Method Not Allowed', { status: 405 });
 }
 
-await initDatabase();
 await verifyStartupDependencies();
 
 const server = Bun.serve({
@@ -30,4 +28,4 @@ const server = Bun.serve({
   fetch: routeRequest,
 });
 
-console.log(`[server] Listening on port ${server.port}`);
+console.log(`[server] 🚀 Gateway listening on http://localhost:${server.port}`);
