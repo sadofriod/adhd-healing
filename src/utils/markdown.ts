@@ -5,6 +5,7 @@ const DEFAULT_TITLE = '未命名想法';
 const DEFAULT_KERNEL = '暂无可用蒸馏结果';
 const DEFAULT_MILESTONE = '明确 20 分钟第一步\n- 写下第一个可执行动作';
 const DEFAULT_REMINDER_STEPS = '- 写下第一个可执行动作';
+const DEFAULT_RAG_REFERENCE_MILESTONE = '未提取到里程碑';
 const MAX_TITLE_LENGTH = 30;
 
 function escapeRegex(str: string): string {
@@ -30,6 +31,10 @@ function stripMarkdownDecorators(value: string): string {
 
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSectionLine(value: string): string {
+  return collapseWhitespace(stripMarkdownDecorators(value));
 }
 
 function stripTrailingPunctuation(value: string): string {
@@ -66,6 +71,15 @@ function getSectionTitle(section: string, fallback: string): string {
   return toBriefTitle(firstLine, fallback);
 }
 
+function getSectionDetails(section: string): string {
+  const detailLines = getSectionLines(section)
+    .slice(1, 3)
+    .map(normalizeSectionLine)
+    .filter(Boolean);
+
+  return detailLines.join(' ');
+}
+
 function getMilestoneSteps(section: string): string {
   const lines = getSectionLines(section);
   if (lines.length === 0) return DEFAULT_REMINDER_STEPS;
@@ -75,7 +89,7 @@ function getMilestoneSteps(section: string): string {
 
 export function extractSection(mdText: string, header: string): string | null {
   const escaped = escapeRegex(header);
-  const pattern = new RegExp(`${escaped}\\r?\\n([\\s\\S]*?)(?=\\r?\\n###|$)`, 'i');
+  const pattern = new RegExp(`(?:^|\\r?\\n)${escaped}\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s|$)`, 'i');
   return trimMatchGroup(mdText.match(pattern), 1);
 }
 
@@ -110,10 +124,17 @@ export function buildReminderDescription(mdText: string): string {
   ].join('\n');
 }
 
-function hasRequiredSections(mdText: string): boolean {
-  return [TODAY_HEADER, RAG_HEADER, MILESTONE_HEADER].every(header => {
-    return extractSection(mdText, header) !== null;
-  });
+export function buildRagReference(mdText: string): string {
+  const title = extractTitle(mdText);
+  const milestone = extractMilestone(mdText) ?? DEFAULT_RAG_REFERENCE_MILESTONE;
+  const kernelSection = extractSection(mdText, TODAY_HEADER);
+  const details = kernelSection ? getSectionDetails(kernelSection) : '';
+
+  return [
+    `相关想法标题：${title}`,
+    details ? `相关想法摘要：${details}` : null,
+    `相关想法里程碑：${milestone}`,
+  ].filter(Boolean).join('\n');
 }
 
 function buildSection(header: string, content: string): string {
@@ -153,6 +174,5 @@ function buildNormalizedMarkdown(mdText: string, ragContext: string): string {
 }
 
 export function normalizeFinalMarkdown(mdText: string, ragContext: string): string {
-  if (hasRequiredSections(mdText)) return mdText.trim();
-  return buildNormalizedMarkdown(mdText, ragContext);
+  return buildNormalizedMarkdown(mdText, ragContext).trim();
 }

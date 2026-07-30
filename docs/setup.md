@@ -9,7 +9,7 @@
 | Docker | any | For PostgreSQL pgvector container |
 | Swift / Xcode Command Line Tools | Installed on macOS | Compiles the local Speech transcription helper |
 | LM Studio | ≥ 0.3 | OpenAI-compatible local model gateway |
-| iPhone Shortcuts | iOS 16+ | Client entry point for input |
+| Modern browser | Safari / Chrome / Edge | Client entry point for text and audio input |
 
 ## 1. Start PostgreSQL + pgvector
 
@@ -73,7 +73,7 @@ pnpm install
 ## 5. Start the service
 
 ```bash
-bun --env-file=.env server.ts
+pnpm start
 ```
 
 On first startup, macOS may prompt for Speech Recognition permission when the transcription helper runs its health check. Grant it, or the server will fail fast before opening the HTTP port.
@@ -86,21 +86,30 @@ Expected output:
 [server] Listening on port 5001
 ```
 
-## 6. iPhone Shortcut setup
+## 6. Open the web client
 
-Build a Shortcut that loops until the server returns `response_type = "final"`:
+Open the React client in a browser that can reach your Mac:
 
-For an action-by-action build guide with recommended variable names, see [docs/iphone-shortcut.md](./iphone-shortcut.md).
+1. On the same machine, open `http://localhost:5001/`.
+2. On your iPhone, open `http://<mac-ip>:5001/` in Safari while on the same LAN.
+3. If you want an app-like launcher on iPhone, use Safari `Share -> Add to Home Screen`.
+4. Allow microphone access when Safari asks, or use the file picker fallback for audio uploads.
 
-1. **Choose input**: Offer "Voice" or "Text" each turn.
-2. **Send to server**: `POST http://<mac-ip>:5001/distill` as `multipart/form-data`:
-   - `input_mode` = `"audio"` or `"text"`
-   - `text` = text content (text mode only)
-   - `audio` = recorded audio file (audio mode only)
-   - `session_id` = stored value from previous turn (omit on first turn)
-3. **Parse JSON response** and store `session_id`.
-4. **Loop check**: if `is_complete` is `false`, show `assistant_message` and repeat.
-5. **Done**: if `is_complete` is `true`, display `final_markdown`.
+For a focused walkthrough of the page behavior, see [docs/web-entry.md](./web-entry.md).
+
+Each loop works like this:
+
+1. **Read the current question** shown in the prompt card.
+2. **Answer with text** through the textarea, or **answer with audio** by recording or uploading a file.
+3. **Let the page keep `session_id`** in memory for follow-up turns.
+4. **Continue** when `is_complete` is `false` and a new clarification prompt appears.
+5. **Stop** when `is_complete` is `true` and the final Markdown is rendered in the result panel.
+
+### Request contract used by the web client
+
+- Text turns send `application/json` to `POST /distill`.
+- Audio turns send `multipart/form-data` to `POST /distill`.
+- Both modes include `session_id` after the first turn.
 
 ### Response contract
 
@@ -136,7 +145,7 @@ When `response_type` is `"final"`:
 
 | Check | Command / Action |
 | --- | --- |
-| Health | `curl -X POST http://localhost:5001/distill -F input_mode=text -F "text=我有一个想法"` |
+| Health | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"input_mode":"text","text":"我有一个想法"}'` |
 | Session persisted | `psql $DATABASE_URL -c "SELECT id, status, turn_count FROM idea_sessions;"` |
 | Vault file created | `ls $BRAIN_VAULT_PATH` |
 | Final idea in DB | `psql $DATABASE_URL -c "SELECT id, created_at FROM my_ideas;"` |
@@ -150,7 +159,7 @@ On first run, macOS may prompt for Automation permission for Reminders. Grant it
 | Error | Likely cause |
 | --- | --- |
 | `Missing required environment variable: DATABASE_URL` | `.env` not loaded or variable missing |
-| `Session not found: <id>` | `session_id` was dropped between Shortcut turns |
+| `Session not found: <id>` | `session_id` was dropped because the page was refreshed or the session was reset mid-conversation |
 | embedding request failed | Embedding model not loaded in LM Studio, or model name does not match current configuration |
 | `[reminders] Failed to add reminder` | macOS Automation permission not granted |
 | `Speech recognition authorization failed` | Grant macOS Speech Recognition permission to the terminal process or rerun startup |

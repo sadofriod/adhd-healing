@@ -8,7 +8,7 @@ The plan assumes one focused engineer building a local-first prototype.
 ## 2. Delivery Strategy
 
 1. Prove infrastructure before polishing the conversation prompts.
-2. Keep one thin vertical slice working at all times: Shortcut input -> server response -> next Shortcut step.
+2. Keep one thin vertical slice working at all times: web input -> server response -> next web step.
 3. Front-load external dependency risk: PostgreSQL pgvector, local ASR, LM Studio, and macOS Reminders permissions.
 4. Treat the clarification loop as core product behavior, not as a later enhancement.
 5. Use manual validation checkpoints at the end of each iteration.
@@ -21,7 +21,7 @@ The plan assumes one focused engineer building a local-first prototype.
 | Work mode | Full-time focus |
 | Runtime | Bun + TypeScript on macOS |
 | External services | Local Docker PostgreSQL, local ASR, and local LM Studio are available |
-| Input client | iPhone Shortcuts can send audio or text and can preserve `session_id` across turns |
+| Input client | The React web client can send audio or text and can preserve `session_id` across turns |
 
 ## 4. Iteration Timeline
 
@@ -29,10 +29,10 @@ The plan assumes one focused engineer building a local-first prototype.
 | --- | --- | --- | --- |
 | Iteration 0 | 0.5 day | Environment readiness | DB container, ASR, LM Studio, Bun runtime, `.env` contract all verified |
 | Iteration 1 | 1.5 days | Service bootstrap and session/database initialization | Service starts, env validation works, session tables and `my_ideas` are auto-created |
-| Iteration 2 | 1.5 days | Multimodal input and transcription | Shortcut can send text or audio; audio can be transcribed |
+| Iteration 2 | 1.5 days | Multimodal input and transcription | The web client can send text or audio; audio can be transcribed |
 | Iteration 3 | 2 days | Conversation API and clarification loop | `/distill` returns JSON and supports multi-turn `session_id` continuation |
 | Iteration 4 | 2 days | RAG retrieval, final distillation, and local vault persistence | Completed sessions retrieve history, finalize Markdown, insert DB row, and create vault file |
-| Iteration 5 | 1 day | Reminders integration and Shortcut round-trip | Milestone extraction works and reminders write is attempted safely |
+| Iteration 5 | 1 day | Reminders integration and web round-trip | Milestone extraction works and reminders write is attempted safely |
 | Iteration 6 | 1.5 days | End-to-end validation and ops docs | Audio and text flows both pass multi-turn manual validation and setup docs are complete |
 
 Total suggested schedule: 10 working days.
@@ -49,7 +49,7 @@ Tasks:
 | --- | --- |
 | T-002 | Install project dependencies |
 | T-003 | Define `.env` contract |
-| T-005 | Draft Shortcut request/response contract |
+| T-005 | Draft web request/response contract |
 | T-034 | Draft local setup steps early |
 
 Validation:
@@ -65,7 +65,7 @@ Risk focus:
 
 - ASR integration path may vary by local runtime choice.
 - LM Studio model names may differ from the plan.
-- Shortcut multipart upload may need tighter payload conventions.
+- Browser multipart upload may need tighter payload conventions.
 
 ### Iteration 1
 
@@ -110,7 +110,7 @@ Tasks:
 
 Deliverable:
 
-- Shortcut can send either manual text or audio and the server can normalize each request into a usable text payload.
+- The web client can send either manual text or audio and the server can normalize each request into a usable text payload.
 
 Exit criteria:
 
@@ -180,17 +180,17 @@ Tasks:
 | T-030 | Implement JXA reminders sync |
 | T-031 | Add guard when no milestone exists |
 | T-032 | Improve logs for session, retrieval, persistence, and reminder steps |
-| T-033 | Document Shortcut loop behavior |
+| T-033 | Document web loop behavior |
 
 Deliverable:
 
-- Finalized sessions can dispatch a reminder and Shortcut behavior is documented clearly.
+- Finalized sessions can dispatch a reminder and the web flow is documented clearly.
 
 Exit criteria:
 
 1. Reminder appears in the default Reminders list on success.
 2. Permission failures are logged and do not break final API response.
-3. Shortcut flow for follow-up turns is documented with `session_id` handling.
+3. Web flow for follow-up turns is documented with `session_id` handling.
 
 ### Iteration 6
 
@@ -224,7 +224,7 @@ Exit criteria:
 | M2 | Day 4 | Text and audio requests are accepted and normalized |
 | M3 | Day 6 | `/distill` supports multi-turn clarification sessions |
 | M4 | Day 8 | Completed sessions persist to DB and local vault with RAG reuse |
-| M5 | Day 9 | Reminder sync and Shortcut round-trip are integrated safely |
+| M5 | Day 9 | Reminder sync and web round-trip are integrated safely |
 | M6 | Day 10 | MVP passes audio, text, and cross-session validation |
 
 ## 7. Risk Register
@@ -234,7 +234,7 @@ Exit criteria:
 | Local ASR integration is unstable or too slow | Voice path blocked or degraded | Validate with a sample audio in Iteration 0 and keep a clear fallback error path | Audio cannot be transcribed reliably by Iteration 2 |
 | LM Studio model not loaded or model name mismatch | Clarification/final path blocked | Validate model availability in Iteration 0 | Service cannot return a first valid question by Iteration 3 |
 | PostgreSQL pgvector extension missing | Retrieval path blocked | Use official pgvector image and boot-time extension creation | Table init fails on a fresh database |
-| Shortcut loses `session_id` between turns | Clarification context breaks | Keep JSON response contract minimal and document storage clearly | Second turn cannot resume same session |
+| Browser loses `session_id` between turns | Clarification context breaks | Keep JSON response contract minimal and document storage clearly | Second turn cannot resume same session |
 | LLM asks too many or low-value questions | User drop-off increases | Cap question count and define focused prompting rules | More than 3 turns are often needed for simple ideas |
 | macOS automation permissions block Reminders | Reminder step degrades | Make reminder path non-blocking and log clearly | Reminder step crashes final response flow |
 | Embedding model missing or mismatched | Retrieval path is blocked | Fail fast on startup and keep model names aligned with LM Studio | Service cannot complete startup or embedding requests |
@@ -244,7 +244,7 @@ Exit criteria:
 Release to personal daily use only if all checks below are true:
 
 1. Service startup is stable across restarts.
-2. Shortcut can complete at least one text session and one audio session.
+2. The web client can complete at least one text session and one audio session.
 3. At least one session proves multi-turn clarification with the same `session_id`.
 4. A later session proves historical retrieval reuse.
 5. Local vault files are created with correct Markdown structure.
@@ -255,7 +255,7 @@ Release to personal daily use only if all checks below are true:
 
 These items are intentionally excluded from the current schedule:
 
-1. Native iOS app instead of Shortcuts input.
+1. Native iOS app instead of the web input page.
 2. Raw audio archive, playback UI, and waveform editing.
 3. Multi-user accounts and cloud sync.
 4. Topic clustering and automatic merge jobs.

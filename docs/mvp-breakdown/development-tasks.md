@@ -7,8 +7,8 @@ All tasks here are in MVP scope and map back to requirement IDs.
 
 ## 2. Delivery Principles
 
-1. Build the narrowest useful loop first: iPhone Shortcut audio or text input -> `/distill` -> LLM clarifying question -> user reply -> final Markdown.
-2. Preserve iPhone Shortcuts as the only interaction shell; all multi-turn behavior must work through `session_id` and structured server responses.
+1. Build the narrowest useful loop first: web audio or text input -> `/distill` -> LLM clarifying question -> user reply -> final Markdown.
+2. Preserve the React web client as the only interaction shell; all multi-turn behavior must work through `session_id` and structured server responses.
 3. Add persistence before polish: session history, pgvector retrieval, and local Markdown vault are mandatory in MVP.
 4. Keep the system single-user and local-first; do not expand into native iOS app work or multi-user workflows.
 5. Every task must have an executable acceptance check.
@@ -22,7 +22,7 @@ All tasks here are in MVP scope and map back to requirement IDs.
 | WS-03 | Multimodal input and transcription |
 | WS-04 | Session storage and PostgreSQL pgvector initialization |
 | WS-05 | LM Studio integration |
-| WS-06 | Conversation API and Shortcut contract |
+| WS-06 | Conversation API and web client contract |
 | WS-07 | Clarification loop and RAG assembly |
 | WS-08 | Final distillation and local vault persistence |
 | WS-09 | Apple Reminders integration |
@@ -54,9 +54,9 @@ flowchart LR
 | T-002 | WS-01 | Install runtime and typing dependencies | `package.json` contains `pg`, `@types/pg`, AI SDK, and required HTTP/audio helpers | MVP-FR-005 | None | Dependency install completes and lockfile is generated |
 | T-003 | WS-02 | Add `.env` loading contract | `.env.example` or documented required variables | MVP-FR-002, MVP-FR-003 | T-001 | Required variables are visible in startup documentation |
 | T-004 | WS-02 | Implement startup validation for `BRAIN_VAULT_PATH` and `DATABASE_URL` | Process exits fast on missing config | MVP-FR-004 | T-003 | Missing variable causes non-zero exit and readable error log |
-| T-005 | WS-03 | Define Shortcut input contract | Request spec for `audio|text`, optional `session_id`, and response handling | MVP-FR-103, MVP-FR-104, MVP-FR-107, MVP-FR-703, MVP-FR-704 | T-003 | Shortcut can follow one documented request/response contract for every turn |
+| T-005 | WS-03 | Define web input contract | Request spec for `audio|text`, optional `session_id`, and response handling | MVP-FR-103, MVP-FR-104, MVP-FR-107, MVP-FR-703, MVP-FR-704 | T-003 | The web client can follow one documented request/response contract for every turn |
 | T-006 | WS-03 | Implement text input normalization | Shared text cleaning path for manual input | MVP-FR-105 | T-005 | Text input is accepted, trimmed, and forwarded consistently |
-| T-007 | WS-03 | Implement audio upload parsing | Audio request handling for Shortcut uploads | MVP-FR-106 | T-005 | Audio file can be received and validated by the service |
+| T-007 | WS-03 | Implement audio upload parsing | Audio request handling for browser uploads | MVP-FR-106 | T-005 | Audio file can be received and validated by the service |
 | T-008 | WS-03 | Implement transcription adapter | `transcribeAudio(audio)` path for voice input | MVP-FR-201, MVP-FR-202, MVP-FR-702 | T-007 | Valid audio returns transcription text or a clear error |
 | T-009 | WS-04 | Create PostgreSQL client module | Shared connection setup | MVP-FR-301, MVP-FR-302, MVP-FR-303, MVP-FR-304 | T-004 | Service can connect to configured `DATABASE_URL` |
 | T-010 | WS-04 | Auto-enable pgvector extension | `CREATE EXTENSION IF NOT EXISTS vector;` on boot | MVP-FR-301 | T-009 | Fresh database gains `vector` extension after startup |
@@ -82,7 +82,7 @@ flowchart LR
 | T-030 | WS-09 | Implement Reminders JXA integration | `syncToAppleReminders(taskTitle)` | MVP-FR-601, MVP-FR-602, MVP-FR-603, MVP-FR-604, MVP-FR-707 | T-026 | Valid milestone triggers reminder creation; failure only logs |
 | T-031 | WS-09 | Guard reminder sync with milestone presence | No-op when milestone is missing | MVP-FR-601, MVP-FR-602 | T-030 | Empty milestone does not break request flow |
 | T-032 | WS-10 | Add startup and processing logs | Logs for transcription, sessions, retrieval, persistence, reminders | Supports MVP-FR-702, MVP-FR-705, MVP-FR-706, MVP-FR-707 | T-021, T-027, T-029, T-030 | Logs identify where a failed turn stopped |
-| T-033 | WS-10 | Document iPhone Shortcut loop behavior | Runbook for session_id retention and follow-up turns | MVP-FR-703, MVP-FR-704 | T-005, T-018 | Another developer can rebuild the Shortcut flow from docs |
+| T-033 | WS-10 | Document web conversation loop behavior | Runbook for session_id retention and follow-up turns | MVP-FR-703, MVP-FR-704 | T-005, T-018 | Another developer can rebuild the web flow from docs |
 | T-034 | WS-10 | Document local environment setup | Setup guide for Docker, ASR, LM Studio, `.env`, Bun command | MVP-FR-001, MVP-FR-701, MVP-FR-702 | T-001 to T-033 | New developer can start the stack from docs alone |
 | T-035 | WS-10 | Validate full end-to-end text-mode flow | Manual test cases and evidence capture for manual text sessions | MVP-FR-704, MVP-FR-705, MVP-FR-706, MVP-FR-707 | T-027, T-029, T-030, T-033, T-034 | Text mode supports at least one clarifying turn and one final result |
 | T-036 | WS-10 | Validate full end-to-end audio-mode flow | Manual test cases and evidence capture for audio sessions | MVP-FR-201, MVP-FR-202, MVP-FR-704, MVP-FR-705, MVP-FR-706, MVP-FR-707 | T-008, T-027, T-029, T-030, T-033, T-034 | Audio mode supports transcription, clarifying turns, final persistence, and reminders path |
@@ -127,9 +127,9 @@ An MVP task is only done when all conditions below are met:
 
 | Topic | Current Decision | Why |
 | --- | --- | --- |
-| Interaction shell | Keep iPhone Shortcuts for first turn and follow-up turns | Preserves the user's preferred entry point |
-| Input transport | Use one endpoint with `audio|text` modes and optional `session_id` | Keeps Shortcut logic simple |
-| Response contract | Return JSON envelope, not plain Markdown | Shortcut must know whether to continue asking or stop |
+| Interaction shell | Keep the React web client for first turn and follow-up turns | Preserves one consistent entry point |
+| Input transport | Use one endpoint with `audio|text` modes and optional `session_id` | Keeps the web flow simple |
+| Response contract | Return JSON envelope, not plain Markdown | The web client must know whether to continue asking or stop |
 | Session persistence | Store session history in PostgreSQL | Needed for multi-turn clarification continuity |
 | Retrieval size | Top 2 similar completed ideas | Enough context without prompt bloat |
 | Clarification limit | Max 3 assistant questions before forced finalization or user override | Prevents endless loops |

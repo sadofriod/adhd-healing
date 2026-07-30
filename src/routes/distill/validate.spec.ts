@@ -4,6 +4,24 @@ import { validateDistillRequest } from './validate.js';
 const VALID_SESSION_ID = '6dc4f04b-5b92-4b44-9f5d-59b7aa4f2df4';
 
 describe('validateDistillRequest', () => {
+  it('accepts JSON text requests with null session ids', async () => {
+    const req = new Request('http://localhost:5001/distill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input_mode: 'text',
+        text: '把 iPhone 录音整理成网页输入流',
+        session_id: null,
+      }),
+    });
+
+    await expect(validateDistillRequest(req)).resolves.toEqual({
+      inputMode: 'text',
+      text: '把 iPhone 录音整理成网页输入流',
+      sessionId: undefined,
+    });
+  });
+
   it('accepts JSON text requests and normalizes blank session ids', async () => {
     const req = new Request('http://localhost:5001/distill', {
       method: 'POST',

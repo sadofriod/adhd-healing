@@ -2,6 +2,7 @@ export type InputMode = 'audio' | 'text';
 export type SessionStatus = 'clarifying' | 'completed' | 'abandoned';
 export type MessageRole = 'user' | 'assistant';
 export type ResponseType = 'clarify' | 'final';
+export type WorkflowStatus = 'CONTINUE' | 'FINISH';
 
 export interface Session {
   id: string;
@@ -38,6 +39,12 @@ export type DistillRequestData = TextRequestData | AudioRequestData;
 
 export interface DistillResponse {
   session_id: string;
+  status: WorkflowStatus;
+  message: string;
+  next_question: string | null;
+  markdown_report: string | null;
+  milestone_title: string | null;
+  idea_title: string | null;
   response_type: ResponseType;
   assistant_message: string;
   turn_index: number;

@@ -3,13 +3,15 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun"],
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "react", "react-dom"],
     "strict": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": false
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

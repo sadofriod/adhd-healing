@@ -13,39 +13,33 @@ describe('shouldForceFinalize', () => {
     expect(shouldForceFinalize(0, '用户: 请直接总结一下')).toBe(true);
   });
 
-  it('converts premature final output into a clarification question when context is sparse', () => {
+  it('keeps final output decisions even when the context is sparse', () => {
     expect(
       enforceDecisionConstraints(
         {
           type: 'final',
           message: '我来直接总结',
           markdown: '### 🎯 今日灵感内核\n简短总结',
-        },
-        '用户: 我有一个想法'
-      )
-    ).toEqual({
-      type: 'clarify',
-      message: '你希望这个想法最终产出成什么，或者帮你解决什么问题？',
-    });
-  });
-
-  it('keeps final output when the user context already covers enough decision dimensions', () => {
-    expect(
-      enforceDecisionConstraints(
-        {
-          type: 'final',
-          message: '可以总结',
-          markdown: '### 🎯 今日灵感内核\n完整总结',
-        },
-        [
-          '用户: 我想做一个本地优先的记录工具，最终产出一个 Bun 服务原型。',
-          '用户: 目标用户先是我自己，要求本地优先和隐私安全，这周完成第一版验证。',
-        ].join('\n')
+        }
       )
     ).toEqual({
       type: 'final',
-      message: '可以总结',
-      markdown: '### 🎯 今日灵感内核\n完整总结',
+      message: '我来直接总结',
+      markdown: '### 🎯 今日灵感内核\n简短总结',
+    });
+  });
+
+  it('normalizes malformed clarify output into a single generic question', () => {
+    expect(
+      enforceDecisionConstraints(
+        {
+          type: 'clarify',
+          message: '### 先说目标\n再说用户',
+        }
+      )
+    ).toEqual({
+      type: 'clarify',
+      message: '先别继续铺开。现在最影响判断的那个关键约束是什么？',
     });
   });
 });

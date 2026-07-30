@@ -1,78 +1,60 @@
-import type { ChatCompletion } from 'openai/resources/chat/completions.js';
-import { getLlmClient } from './llm-client.js';
+import type {
+  ChatCompletion,
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionMessageParam,
+  ChatCompletionMessageToolCall,
+  ChatCompletionTool,
+  ChatCompletionToolMessageParam,
+} from 'openai/resources/chat/completions.js';
+import type { Completion } from 'openai/resources/completions.js';
+import { z } from 'zod';
 import { config } from '../config/env.js';
 import type { LlmDecision, LlmClarifyDecision, LlmFinalDecision, Session } from '../types.js';
+import {
+  getClarificationSystemPrompt,
+  getCompletionFallbackNotes,
+} from './clarification/agent.js';
+import { getLlmClient } from './llm-client.js';
+import { searchWeb } from './web-search.js';
 
 const FINALIZE_TRIGGERS = ['直接总结', 'summarize now', 'finalize', '总结一下'];
-const MINIMUM_DECISION_DIMENSIONS = 3;
-const RICH_CONTEXT_MIN_LENGTH = 120;
-const RICH_CONTEXT_MIN_USER_MESSAGES = 2;
+const TOOL_CALL_LIMIT = 3;
+const BROWSER_SEARCH_TOOL_NAME = 'browser_search';
+const COMPLETION_FALLBACK_MAX_TOKENS = 1200;
+const completionFallbackModels = new Set<string>();
+const DEFAULT_CLARIFY_QUESTION = '先别继续铺开。现在最影响判断的那个关键约束是什么？';
 
-const SYSTEM_CLARIFY = `你是一个想法澄清助手，帮助用户通过聚焦追问逐步澄清和蒸馏想法。
+const browserSearchArgumentsSchema = z.object({
+  engine: z.enum(['google', 'bing', 'duckduckgo', 'all']).optional(),
+  query: z.string().trim().min(1).max(240),
+});
 
-规则：
-1. 如果信息不足（缺少目标、受众、约束、时间范围或成功标准），仅提出一个聚焦问题。
-2. 如果信息已充分或用户要求直接总结，输出最终蒸馏结果。
-3. 必须以 JSON 格式响应，不得有额外文字。
-4. 最多只允许进行 3 轮澄清问题；达到第 3 轮后，下次必须直接输出最终结果。
-
-澄清格式：{"type":"clarify","message":"你的单一聚焦问题"}
-最终格式：{"type":"final","message":"简短总结","markdown":"包含三个区块的完整Markdown"}
-
-最终 Markdown 必须包含以下三个区块：
-### 🎯 今日灵感内核
-### 🔄 历史思维连线 (RAG 检索结果)
-### 🚀 20分钟强制里程碑 (Milestone)
-
-格式要求：
-- “今日灵感内核”区块第一行必须是一句总结性的简述，后面再写补充说明。
-- “20分钟强制里程碑”区块第一行必须是一句总结性的行动标题，后面必须给出分步骤 Markdown 列表。`;
-
-const SYSTEM_FINAL = `你是一个想法蒸馏助手。无论信息是否充分，请立即输出最终蒸馏结果。
-
-必须以 JSON 格式响应：{"type":"final","message":"简短总结","markdown":"完整Markdown"}
-
-Markdown 必须包含：
-### 🎯 今日灵感内核
-### 🔄 历史思维连线 (RAG 检索结果)
-### 🚀 20分钟强制里程碑 (Milestone)
-
-格式要求：
-- “今日灵感内核”区块第一行必须是一句总结性的简述，后面再写补充说明。
-- “20分钟强制里程碑”区块第一行必须是一句总结性的行动标题，后面必须给出分步骤 Markdown 列表。`;
-
-const CLARIFY_FALLBACK_QUESTIONS = [
-  {
-    keywords: ['目标', '产出', '结果', '用途', '解决'],
-    question: '你希望这个想法最终产出成什么，或者帮你解决什么问题？',
+const BROWSER_SEARCH_TOOL: ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: BROWSER_SEARCH_TOOL_NAME,
+    description: [
+      'Search the public web when the user asks about current facts, external websites, product updates, documentation changes, recent news, or anything that may require fresh public context.',
+      'Use Google, Bing, DuckDuckGo, or all of them. Keep queries focused and short.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'A focused web search query that can surface the latest public information relevant to the user idea.',
+        },
+        engine: {
+          type: 'string',
+          enum: ['google', 'bing', 'duckduckgo', 'all'],
+          description: 'Preferred search engine. Use all when you want broader coverage.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
   },
-  {
-    keywords: ['受众', '用户', '给谁', '谁用', '自己', '团队'],
-    question: '这个想法主要是给谁用的：只给你自己，还是也要给别人使用？',
-  },
-  {
-    keywords: ['约束', '限制', '本地', '隐私', '预算', '15 秒', '响应'],
-    question: '你现在最重要的约束是什么，比如时间、工具、本地优先还是隐私要求？',
-  },
-  {
-    keywords: ['时间', '这周', '今天', '本周', '期限', '截止'],
-    question: '你希望在什么时间范围内验证或完成这件事？',
-  },
-  {
-    keywords: ['成功标准', '验证', '指标', '算成功', '完成'],
-    question: '这件事做到什么程度，你会认为这次想法整理是成功的？',
-  },
-] as const;
-
-const DEFAULT_CLARIFY_QUESTION = '你现在最想先澄清的是目标、受众、约束、时间范围还是成功标准？';
-
-type ClarificationDimension = Readonly<{
-  keywords: readonly string[];
-  question: string;
-}>;
-
-const CLARIFICATION_DIMENSIONS: readonly ClarificationDimension[] =
-  CLARIFY_FALLBACK_QUESTIONS;
+};
 
 function isPlainObject(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null;
@@ -122,28 +104,31 @@ function getFirstChoiceContent(response: ChatCompletion): string {
   return content ?? '';
 }
 
+function getFirstCompletionText(response: Completion): string {
+  if (response.choices.length === 0) return '';
+  return response.choices[0].text ?? '';
+}
+
+function getFirstChoiceToolCalls(response: ChatCompletion): readonly ChatCompletionMessageToolCall[] {
+  if (response.choices.length === 0) return [];
+  return response.choices[0].message.tool_calls ?? [];
+}
+
 function buildUserMessage(sessionContext: string, ragContext: string): string {
-  return `【会话历史】\n${sessionContext}\n\n【历史相关想法】\n${ragContext}`;
-}
-
-function extractUserContext(sessionContext: string): string {
-  return sessionContext
-    .split('\n')
-    .filter(line => line.startsWith('用户:'))
-    .map(line => line.replace(/^用户:\s*/, '').trim())
-    .join('\n');
-}
-
-function countUserMessages(sessionContext: string): number {
-  return sessionContext.split('\n').filter(line => line.startsWith('用户:')).length;
-}
-
-function normalizeContextForMatching(text: string): string {
-  return text.toLowerCase();
-}
-
-function includesAnyKeyword(text: string, keywords: readonly string[]): boolean {
-  return keywords.some(keyword => text.includes(keyword.toLowerCase()));
+  return [
+    '【当前日期】',
+    new Date().toISOString().slice(0, 10),
+    '',
+    '【输出约束】',
+    '- “今日灵感内核”和“20分钟强制里程碑”只能来自【会话历史】里的当前用户输入。',
+    '- 【历史相关想法】只能用于“历史思维连线 (RAG 检索结果)”区块，不能覆盖当前想法。',
+    '',
+    '【会话历史】',
+    sessionContext,
+    '',
+    '【历史相关想法】',
+    ragContext,
+  ].join('\n');
 }
 
 function hasQuestionSuffix(message: string): boolean {
@@ -171,86 +156,266 @@ function isSingleQuestion(message: string): boolean {
   return matchesSingleQuestionShape(message.trim());
 }
 
-function countCoveredDecisionDimensions(sessionContext: string): number {
-  const userContext = normalizeContextForMatching(extractUserContext(sessionContext));
-
-  return CLARIFICATION_DIMENSIONS.filter(candidate => {
-    return includesAnyKeyword(userContext, candidate.keywords);
-  }).length;
-}
-
-function hasRichUserContext(sessionContext: string): boolean {
-  const userContext = extractUserContext(sessionContext);
+function buildInitialMessages(systemPrompt: string, userMessage: string): ChatCompletionMessageParam[] {
   return [
-    userContext.length >= RICH_CONTEXT_MIN_LENGTH,
-    countUserMessages(sessionContext) >= RICH_CONTEXT_MIN_USER_MESSAGES,
-  ].every(Boolean);
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ];
 }
 
-function hasSufficientDecisionContext(sessionContext: string): boolean {
-  const coveredDimensions = countCoveredDecisionDimensions(sessionContext);
-
-  if (coveredDimensions >= MINIMUM_DECISION_DIMENSIONS) return true;
-  if (coveredDimensions >= MINIMUM_DECISION_DIMENSIONS - 1 && hasRichUserContext(sessionContext)) {
-    return true;
-  }
-
-  return false;
+function buildCompletionFallbackPrompt(systemPrompt: string, userMessage: string): string {
+  return [
+    systemPrompt,
+    '',
+    getCompletionFallbackNotes(),
+    '',
+    '【用户上下文】',
+    userMessage,
+  ].join('\n');
 }
 
-function findMissingClarificationQuestion(sessionContext: string): string | null {
-  const userContext = normalizeContextForMatching(extractUserContext(sessionContext));
-  if (userContext.length === 0) return DEFAULT_CLARIFY_QUESTION;
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
-  const missingDimension = CLARIFICATION_DIMENSIONS.find(candidate => {
-    return !includesAnyKeyword(userContext, candidate.keywords);
+function isPromptTemplateCompatibilityError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return [
+    'error rendering prompt with jinja template',
+    'unknown test: sequence',
+  ].some(fragment => message.includes(fragment));
+}
+
+function shouldUseCompletionFallback(model: string): boolean {
+  return completionFallbackModels.has(model);
+}
+
+function markModelAsCompletionFallback(model: string): void {
+  completionFallbackModels.add(model);
+}
+
+export function resetCompletionFallbackModels(): void {
+  completionFallbackModels.clear();
+}
+
+async function callLlmWithCompletionFallback(
+  systemPrompt: string,
+  userMessage: string
+): Promise<LlmDecision> {
+  const response = await getLlmClient().completions.create({
+    model: config.chatModel,
+    prompt: buildCompletionFallbackPrompt(systemPrompt, userMessage),
+    max_tokens: COMPLETION_FALLBACK_MAX_TOKENS,
+    temperature: 0.2,
   });
 
-  return missingDimension?.question ?? null;
+  return parseLlmDecision(getFirstCompletionText(response));
 }
 
-function buildFallbackClarifyQuestion(sessionContext: string): string {
-  return findMissingClarificationQuestion(sessionContext) ?? DEFAULT_CLARIFY_QUESTION;
+function getFirstChoiceMessage(
+  response: ChatCompletion
+): ChatCompletion['choices'][number]['message'] | null {
+  return response.choices[0]?.message ?? null;
+}
+
+function normalizeAssistantContent(
+  content: ChatCompletion['choices'][number]['message']['content']
+): string | null {
+  return typeof content === 'string' ? content : null;
+}
+
+function createAssistantToolCallMessageFromChoice(
+  message: ChatCompletion['choices'][number]['message']
+): ChatCompletionAssistantMessageParam | null {
+  const toolCalls = message.tool_calls;
+  if (!toolCalls || toolCalls.length === 0) return null;
+
+  return {
+    role: 'assistant',
+    content: normalizeAssistantContent(message.content),
+    tool_calls: toolCalls,
+  };
+}
+
+function createAssistantToolCallMessage(
+  response: ChatCompletion
+): ChatCompletionAssistantMessageParam | null {
+  const message = getFirstChoiceMessage(response);
+  if (!message) return null;
+  return createAssistantToolCallMessageFromChoice(message);
+}
+
+function buildToolErrorResponse(toolCallId: string, message: string): ChatCompletionToolMessageParam {
+  return {
+    role: 'tool',
+    tool_call_id: toolCallId,
+    content: JSON.stringify({ error: message, results: [] }),
+  };
+}
+
+function parseBrowserSearchArguments(rawArguments: string): z.infer<typeof browserSearchArgumentsSchema> | null {
+  try {
+    const parsed = JSON.parse(rawArguments) as unknown;
+    const result = browserSearchArgumentsSchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function isBrowserSearchToolCall(toolCall: ChatCompletionMessageToolCall): boolean {
+  return toolCall.function.name === BROWSER_SEARCH_TOOL_NAME;
+}
+
+async function runBrowserSearchToolCall(
+  toolCall: ChatCompletionMessageToolCall
+): Promise<ChatCompletionToolMessageParam> {
+  const args = parseBrowserSearchArguments(toolCall.function.arguments);
+  if (!args) {
+    return buildToolErrorResponse(toolCall.id, 'Invalid browser_search arguments');
+  }
+
+  const result = await searchWeb(args.query, { engine: args.engine ?? 'all' });
+
+  return {
+    role: 'tool',
+    tool_call_id: toolCall.id,
+    content: JSON.stringify(result),
+  };
+}
+
+async function runToolCall(toolCall: ChatCompletionMessageToolCall): Promise<ChatCompletionToolMessageParam> {
+  if (!isBrowserSearchToolCall(toolCall)) {
+    return buildToolErrorResponse(toolCall.id, `Unsupported tool: ${toolCall.function.name}`);
+  }
+
+  return runBrowserSearchToolCall(toolCall);
 }
 
 function normalizeClarifyDecision(
-  decision: LlmDecision,
-  sessionContext: string
+  decision: LlmDecision
 ): LlmDecision | LlmClarifyDecision {
   if (decision.type !== 'clarify') return decision;
   if (isSingleQuestion(decision.message)) return decision;
 
   return {
     type: 'clarify',
-    message: buildFallbackClarifyQuestion(sessionContext),
+    message: DEFAULT_CLARIFY_QUESTION,
   };
 }
 
-export function enforceDecisionConstraints(
-  decision: LlmDecision,
-  sessionContext: string
-): LlmDecision {
+export function enforceDecisionConstraints(decision: LlmDecision): LlmDecision {
   if (decision.type === 'clarify') {
-    return normalizeClarifyDecision(decision, sessionContext);
+    return normalizeClarifyDecision(decision);
   }
 
-  if (hasSufficientDecisionContext(sessionContext)) return decision;
+  return decision;
+}
 
-  return {
-    type: 'clarify',
-    message: buildFallbackClarifyQuestion(sessionContext),
-  };
+async function requestChatCompletion(
+  messages: ChatCompletionMessageParam[]
+): Promise<ChatCompletion> {
+  return getLlmClient().chat.completions.create({
+    model: config.chatModel,
+    messages,
+    tools: [BROWSER_SEARCH_TOOL],
+    tool_choice: 'auto',
+  });
+}
+
+async function recoverPromptTemplateCompatibility(
+  error: unknown,
+  systemPrompt: string,
+  userMessage: string
+): Promise<LlmDecision> {
+  if (!isPromptTemplateCompatibilityError(error)) throw error;
+
+  markModelAsCompletionFallback(config.chatModel);
+  console.warn(
+    `[clarification] LM Studio rejected chat prompt template for ${config.chatModel}; retrying with raw completion fallback and caching that compatibility result for later requests.`
+  );
+  return callLlmWithCompletionFallback(systemPrompt, userMessage);
+}
+
+async function requestChatCompletionOrFallback(
+  messages: ChatCompletionMessageParam[],
+  systemPrompt: string,
+  userMessage: string
+): Promise<ChatCompletion | LlmDecision> {
+  try {
+    return await requestChatCompletion(messages);
+  } catch (error) {
+    return recoverPromptTemplateCompatibility(error, systemPrompt, userMessage);
+  }
+}
+
+function isDecisionResult(result: ChatCompletion | LlmDecision): result is LlmDecision {
+  return 'type' in result;
+}
+
+function appendToolCallMessages(
+  messages: ChatCompletionMessageParam[],
+  response: ChatCompletion,
+  toolMessages: readonly ChatCompletionToolMessageParam[]
+): ChatCompletionMessageParam[] {
+  const assistantMessage = createAssistantToolCallMessage(response);
+  const assistantMessages = assistantMessage ? [assistantMessage] : [];
+
+  return [...messages, ...assistantMessages, ...toolMessages];
+}
+
+async function continueChatLoop(
+  response: ChatCompletion,
+  messages: ChatCompletionMessageParam[],
+  systemPrompt: string,
+  userMessage: string,
+  remainingToolRounds: number
+): Promise<LlmDecision> {
+  const toolCalls = getFirstChoiceToolCalls(response);
+  if (toolCalls.length === 0) {
+    return parseLlmDecision(getFirstChoiceContent(response));
+  }
+
+  const toolMessages = await Promise.all(toolCalls.map(runToolCall));
+  return runChatLoop(
+    appendToolCallMessages(messages, response, toolMessages),
+    systemPrompt,
+    userMessage,
+    remainingToolRounds - 1
+  );
+}
+
+async function runChatLoop(
+  messages: ChatCompletionMessageParam[],
+  systemPrompt: string,
+  userMessage: string,
+  remainingToolRounds: number
+): Promise<LlmDecision> {
+  if (remainingToolRounds < 0) {
+    return {
+      type: 'clarify',
+      message: DEFAULT_CLARIFY_QUESTION,
+    };
+  }
+
+  const result = await requestChatCompletionOrFallback(messages, systemPrompt, userMessage);
+  if (isDecisionResult(result)) return result;
+
+  return continueChatLoop(result, messages, systemPrompt, userMessage, remainingToolRounds);
 }
 
 async function callLlm(systemPrompt: string, userMessage: string): Promise<LlmDecision> {
-  const response = await getLlmClient().chat.completions.create({
-    model: config.chatModel,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-  });
-  return parseLlmDecision(getFirstChoiceContent(response));
+  if (shouldUseCompletionFallback(config.chatModel)) {
+    return callLlmWithCompletionFallback(systemPrompt, userMessage);
+  }
+
+  return runChatLoop(
+    buildInitialMessages(systemPrompt, userMessage),
+    systemPrompt,
+    userMessage,
+    TOOL_CALL_LIMIT
+  );
 }
 
 export async function callLlmForClarifyOrFinal(
@@ -258,7 +423,7 @@ export async function callLlmForClarifyOrFinal(
   ragContext: string
 ): Promise<LlmDecision> {
   const userMessage = buildUserMessage(sessionContext, ragContext);
-  return callLlm(SYSTEM_CLARIFY, userMessage);
+  return callLlm(getClarificationSystemPrompt('clarify'), userMessage);
 }
 
 export async function callLlmForFinal(
@@ -266,7 +431,7 @@ export async function callLlmForFinal(
   ragContext: string
 ): Promise<LlmFinalDecision> {
   const userMessage = buildUserMessage(sessionContext, ragContext);
-  const decision = await callLlm(SYSTEM_FINAL, userMessage);
+  const decision = await callLlm(getClarificationSystemPrompt('final'), userMessage);
   if (decision.type === 'final') return decision;
   return { type: 'final', message: decision.message, markdown: decision.message };
 }
@@ -294,7 +459,7 @@ export async function makeDecision(
   }
 
   const decision = await callLlmForClarifyOrFinal(sessionContext, ragContext);
-  return enforceDecisionConstraints(decision, sessionContext);
+  return enforceDecisionConstraints(decision);
 }
 
 export function toClarifyDecision(decision: LlmDecision): LlmClarifyDecision {

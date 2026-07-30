@@ -13,6 +13,7 @@ import { insertMessage } from '../../db/queries/messages.js';
 import { insertIdea, findSimilarIdeas } from '../../db/queries/ideas.js';
 import { buildSessionArtifacts } from '../../utils/context.js';
 import {
+  buildRagReference,
   buildReminderDescription,
   extractTitle,
   extractMilestone,
@@ -50,7 +51,10 @@ async function buildRagContext(text: string): Promise<string> {
   const vectorStr = formatVectorForPg(vector);
   const ideas = await findSimilarIdeas(vectorStr, SIMILAR_IDEAS_LIMIT);
   if (ideas.length === 0) return NO_HISTORY_CONTEXT;
-  return ideas.map(i => i.distilled_text).join('\n\n---\n\n');
+
+  return ideas
+    .map((idea, index) => [`[历史参考 ${index + 1}]`, buildRagReference(idea.distilled_text)].join('\n'))
+    .join('\n\n');
 }
 
 async function saveFinalIdea(rawText: string, markdown: string): Promise<void> {
@@ -110,6 +114,12 @@ async function persistClarifyDecision(sessionId: string, decision: LlmDecision):
 }
 
 type FinalFields = Pick<DistillResponse, 'final_markdown' | 'final_title' | 'milestone'>;
+type WorkflowFields = Pick<
+  DistillResponse,
+  'status' | 'message' | 'next_question' | 'markdown_report' | 'milestone_title' | 'idea_title'
+>;
+
+type ResponseDetails = FinalFields & WorkflowFields;
 
 function buildNullFinalFields(): FinalFields {
   return { final_markdown: null, final_title: null, milestone: null };
@@ -123,9 +133,44 @@ function buildFinalFields(decision: LlmFinalDecision): FinalFields {
   };
 }
 
-function selectFinalFields(decision: LlmDecision): FinalFields {
-  if (isFinalDecision(decision)) return buildFinalFields(decision);
-  return buildNullFinalFields();
+function buildClarifyWorkflowFields(decision: Exclude<LlmDecision, LlmFinalDecision>): WorkflowFields {
+  return {
+    status: 'CONTINUE',
+    message: decision.message,
+    next_question: decision.message,
+    markdown_report: null,
+    milestone_title: null,
+    idea_title: null,
+  };
+}
+
+function buildFinalWorkflowFields(
+  finalFields: FinalFields,
+  decision: LlmFinalDecision
+): WorkflowFields {
+  return {
+    status: 'FINISH',
+    message: decision.markdown,
+    next_question: null,
+    markdown_report: decision.markdown,
+    milestone_title: finalFields.milestone,
+    idea_title: finalFields.final_title,
+  };
+}
+
+function buildResponseDetails(decision: LlmDecision): ResponseDetails {
+  if (!isFinalDecision(decision)) {
+    return {
+      ...buildNullFinalFields(),
+      ...buildClarifyWorkflowFields(decision),
+    };
+  }
+
+  const finalFields = buildFinalFields(decision);
+  return {
+    ...finalFields,
+    ...buildFinalWorkflowFields(finalFields, decision),
+  };
 }
 
 function normalizeDecision(decision: LlmDecision, ragContext: string): LlmDecision {
@@ -138,14 +183,33 @@ function normalizeDecision(decision: LlmDecision, ragContext: string): LlmDecisi
 }
 
 function buildResponse(session: Session, decision: LlmDecision): DistillResponse {
+  const responseDetails = buildResponseDetails(decision);
+
   return {
     session_id: session.id,
+    ...responseDetails,
     response_type: decision.type,
     assistant_message: decision.message,
     turn_index: getResponseTurnIndex(session.turn_count, decision),
     is_complete: isFinalDecision(decision),
-    ...selectFinalFields(decision),
   };
+}
+
+async function persistDecisionOutcome(
+  sessionId: string,
+  rawText: string,
+  decision: LlmDecision
+): Promise<void> {
+  if (!isFinalDecision(decision)) {
+    await persistClarifyDecision(sessionId, decision);
+    return;
+  }
+
+  try {
+    await finalizeSession(sessionId, rawText, decision.markdown);
+  } catch (error) {
+    return abandonSessionAfterFailure(sessionId, error);
+  }
 }
 
 export async function processDistill(reqData: DistillRequestData): Promise<DistillResponse> {
@@ -161,15 +225,7 @@ export async function processDistill(reqData: DistillRequestData): Promise<Disti
     ragContext
   );
 
-  if (isFinalDecision(decision)) {
-    try {
-      await finalizeSession(session.id, rawText, decision.markdown);
-    } catch (error) {
-      return abandonSessionAfterFailure(session.id, error);
-    }
-  } else {
-    await persistClarifyDecision(session.id, decision);
-  }
+  await persistDecisionOutcome(session.id, rawText, decision);
 
   return buildResponse(updatedSession, decision);
 }

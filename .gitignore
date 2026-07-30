@@ -19,4 +19,9 @@ yarn-error.log*
 .env
 
 # build
-*.shortcut
+public/main.js
+public/main.js.map
+public/styles.css
+public/chunks/
+.local-vault/
+.tmp/

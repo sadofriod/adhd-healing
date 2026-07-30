@@ -57,18 +57,21 @@ function toOptionalString(value: FormDataEntryValue | null): string | undefined 
 }
 
 function normalizeJsonSessionId(value: unknown): string | undefined | unknown {
+  if (value == null) return undefined;
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
 }
 
-function normalizeJsonPayload(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
+function isPayloadRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
-  const payload = value as Record<string, unknown>;
+function normalizeJsonPayload(value: unknown): Record<string, unknown> {
+  if (!isPayloadRecord(value)) return {};
+
+  const payload = value;
   return {
     ...payload,
     session_id: normalizeJsonSessionId(payload.session_id),

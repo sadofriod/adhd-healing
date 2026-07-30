@@ -199,6 +199,78 @@ beforeEach(() => {
   calls = buildCalls();
 });
 
+function setupFinalSessionState(): void {
+  state.loadOrCreateSessionResponses = [
+    buildSession({ id: 'session-final', turn_count: 2 }),
+    buildSession({ id: 'session-final', turn_count: 2 }),
+  ];
+  state.sessionArtifacts = {
+    sessionContext: [
+      '用户: 我想做一个本地优先的记录工具，最终产出一个 Bun 服务原型。',
+      '用户: 目标用户先是我自己，要求本地优先和隐私安全，这周完成第一版验证。',
+    ].join('\n'),
+    rawText: '聚合后的原始文本',
+  };
+  state.decision = {
+    type: 'final',
+    message: '蒸馏完成',
+    markdown: '核心总结',
+  };
+}
+
+function buildExpectedFinalMarkdown(): string {
+  return [
+    '### 🎯 今日灵感内核',
+    '核心总结',
+    '',
+    '### 🔄 历史思维连线 (RAG 检索结果)',
+    '无相关历史记录',
+    '',
+    '### 🚀 20分钟强制里程碑 (Milestone)',
+    '明确 20 分钟第一步',
+    '- 写下第一个可执行动作',
+  ].join('\n');
+}
+
+async function runFinalTextTurn(): Promise<Awaited<ReturnType<typeof processDistill>>> {
+  return processDistill({
+    inputMode: 'text',
+    text: '最后一轮补充信息',
+    sessionId: 'session-final',
+  });
+}
+
+function expectFinalPersistenceCalls(expectedMarkdown: string): void {
+  expect(calls.insertMessage).toEqual([['session-final', 'user', 'text', '最后一轮补充信息']]);
+  expect(calls.getEmbedding).toEqual(['聚合后的原始文本', '聚合后的原始文本']);
+  expect(calls.saveToLocalVault).toEqual([['核心总结', expectedMarkdown, '聚合后的原始文本']]);
+  expect(calls.insertIdea).toEqual([['[0.1,0.2,0.3]', '聚合后的原始文本', expectedMarkdown]]);
+  expect(calls.completeSessionWithFinalMessage).toEqual([['session-final', expectedMarkdown]]);
+  expect(calls.updateSessionStatus).toEqual([]);
+  expect(calls.syncToAppleReminders).toHaveLength(1);
+  expect(calls.syncToAppleReminders[0]?.[0]).toBe('明确 20 分钟第一步');
+  expect(calls.syncToAppleReminders[0]?.[1]).toContain(expectedMarkdown);
+}
+
+function expectFinalResponse(result: Awaited<ReturnType<typeof processDistill>>, expectedMarkdown: string): void {
+  expect(result).toEqual({
+    session_id: 'session-final',
+    status: 'FINISH',
+    message: expectedMarkdown,
+    next_question: null,
+    markdown_report: expectedMarkdown,
+    milestone_title: '明确 20 分钟第一步',
+    idea_title: '核心总结',
+    response_type: 'final',
+    assistant_message: '蒸馏完成',
+    turn_index: 2,
+    is_complete: true,
+    final_markdown: expectedMarkdown,
+    final_title: '核心总结',
+    milestone: '明确 20 分钟第一步',
+  });
+}
+
 describe('processDistill', () => {
   it('persists user and assistant messages for clarify responses', async () => {
     const request: DistillRequestData = {
@@ -219,6 +291,12 @@ describe('processDistill', () => {
     expect(calls.updateSessionStatus).toEqual([]);
     expect(result).toEqual({
       session_id: 'session-1',
+      status: 'CONTINUE',
+      message: '你希望这个想法最终产出成什么？',
+      next_question: '你希望这个想法最终产出成什么？',
+      markdown_report: null,
+      milestone_title: null,
+      idea_title: null,
       response_type: 'clarify',
       assistant_message: '你希望这个想法最终产出成什么？',
       turn_index: 1,
@@ -229,61 +307,50 @@ describe('processDistill', () => {
     });
   });
 
-  it('normalizes final markdown and commits completion without a duplicate assistant insert', async () => {
-    state.loadOrCreateSessionResponses = [
-      buildSession({ id: 'session-final', turn_count: 2 }),
-      buildSession({ id: 'session-final', turn_count: 2 }),
+  it('passes summarized historical references into the decision prompt', async () => {
+    state.similarIdeas = [
+      {
+        id: 1,
+        raw_text: '之前做过一个本地语音整理想法的实验。',
+        distilled_text: [
+          '### 🎯 今日灵感内核',
+          '历史上做过本地想法蒸馏器',
+          '用语音快速进入 markdown。',
+          '',
+          '### 🔄 历史思维连线 (RAG 检索结果)',
+          '无相关历史记录',
+          '',
+          '### 🚀 20分钟强制里程碑 (Milestone)',
+          '先打通 Obsidian 写入',
+          '- 验证一条最短链路',
+        ].join('\n'),
+        created_at: new Date('2026-07-29T00:00:00.000Z'),
+      },
     ];
-    state.sessionArtifacts = {
-      sessionContext: [
-        '用户: 我想做一个本地优先的记录工具，最终产出一个 Bun 服务原型。',
-        '用户: 目标用户先是我自己，要求本地优先和隐私安全，这周完成第一版验证。',
-      ].join('\n'),
-      rawText: '聚合后的原始文本',
-    };
-    state.decision = {
-      type: 'final',
-      message: '蒸馏完成',
-      markdown: '核心总结',
-    };
 
-    const result = await processDistill({
+    await processDistill({
       inputMode: 'text',
-      text: '最后一轮补充信息',
-      sessionId: 'session-final',
+      text: '我想做一个 FreeCAD 切片插件。',
     });
 
-    const expectedMarkdown = [
-      '### 🎯 今日灵感内核',
-      '核心总结',
-      '',
-      '### 🔄 历史思维连线 (RAG 检索结果)',
-      '无相关历史记录',
-      '',
-      '### 🚀 20分钟强制里程碑 (Milestone)',
-      '明确 20 分钟第一步',
-      '- 写下第一个可执行动作',
-    ].join('\n');
+    const ragContext = calls.makeDecision[0]?.[2] ?? '';
 
-    expect(calls.insertMessage).toEqual([['session-final', 'user', 'text', '最后一轮补充信息']]);
-    expect(calls.getEmbedding).toEqual(['聚合后的原始文本', '聚合后的原始文本']);
-    expect(calls.saveToLocalVault).toEqual([['核心总结', expectedMarkdown, '聚合后的原始文本']]);
-    expect(calls.insertIdea).toEqual([['[0.1,0.2,0.3]', '聚合后的原始文本', expectedMarkdown]]);
-    expect(calls.completeSessionWithFinalMessage).toEqual([['session-final', expectedMarkdown]]);
-    expect(calls.updateSessionStatus).toEqual([]);
-    expect(calls.syncToAppleReminders).toHaveLength(1);
-    expect(calls.syncToAppleReminders[0]?.[0]).toBe('明确 20 分钟第一步');
-    expect(calls.syncToAppleReminders[0]?.[1]).toContain(expectedMarkdown);
-    expect(result).toEqual({
-      session_id: 'session-final',
-      response_type: 'final',
-      assistant_message: '蒸馏完成',
-      turn_index: 2,
-      is_complete: true,
-      final_markdown: expectedMarkdown,
-      final_title: '核心总结',
-      milestone: '明确 20 分钟第一步',
-    });
+    expect(ragContext).toContain('[历史参考 1]');
+    expect(ragContext).toContain('相关想法标题：历史上做过本地想法蒸馏器');
+    expect(ragContext).toContain('相关想法摘要：用语音快速进入 markdown。');
+    expect(ragContext).toContain('相关想法里程碑：先打通 Obsidian 写入');
+    expect(ragContext).not.toContain('### 🎯 今日灵感内核');
+    expect(ragContext).not.toContain('### 🚀 20分钟强制里程碑 (Milestone)');
+  });
+
+  it('normalizes final markdown and commits completion without a duplicate assistant insert', async () => {
+    setupFinalSessionState();
+
+    const result = await runFinalTextTurn();
+    const expectedMarkdown = buildExpectedFinalMarkdown();
+
+    expectFinalPersistenceCalls(expectedMarkdown);
+    expectFinalResponse(result, expectedMarkdown);
   });
 
   it('marks the session abandoned when finalization fails before completion is committed', async () => {
