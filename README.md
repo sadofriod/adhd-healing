@@ -2,14 +2,16 @@
 
 [中文说明](./README.zh-CN.md)
 
-Cloud-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service accepts text, calls DeepSeek via the Vercel AI SDK for structured multi-turn clarification, and persists the final result to a local Markdown vault and Apple Reminders.
+Cloud-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service accepts text, calls DeepSeek via the Vercel AI SDK for structured multi-turn clarification, can trigger browser search during clarification, and persists the final result to both your main local vault and a categorized `.local-vault` archive with an `index.md` entry point.
 
 ## What It Does
 
 - Accepts `POST /distill` with `{ text, reset }` and returns `{ status: "CONTINUE" | "FINISH", text }`.
 - Manages multi-turn conversation state in memory on the server (single-user, single-session).
-- Uses DeepSeek (`deepseek-chat`) via Vercel AI SDK `generateObject` for structured decision-making.
+- Uses DeepSeek (`deepseek-chat`) via the Vercel AI SDK for structured decision-making.
+- Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
 - Writes finalized Markdown into a local vault directory (Obsidian-compatible).
+- Archives each completed conversation into `.local-vault/<category>/<subcategory>/...` and rebuilds `.local-vault/index.md` for category-based retrieval.
 - Extracts milestones and syncs them into Apple Reminders via `osascript`.
 - Serves a debug React web client at `/`.
 
@@ -32,7 +34,7 @@ This repository is intentionally local-first and macOS-hosted.
        │                                    ASK_MORE → append to session
        └────(CONTINUE: next question)────────┤
                                              │
-                                    COMPLETE → write vault + Reminders
+                                    COMPLETE → write vault + archive index + Reminders
        └────(FINISH: markdown report)────────┘
 ```
 
@@ -41,6 +43,7 @@ This repository is intentionally local-first and macOS-hosted.
 - Runtime: Bun
 - Language: TypeScript
 - LLM: DeepSeek API (`deepseek-chat`) via Vercel AI SDK (`@ai-sdk/openai`)
+- Search: browser search tool (Google / DuckDuckGo / Bing)
 - Validation: Zod
 - Debug client: React web app
 
@@ -100,6 +103,10 @@ See [docs/setup.md](./docs/setup.md) for the full iPhone Shortcuts configuration
 ### 6. Debug web client
 
 Open `http://localhost:5001/` in a browser. The web client sends text turns to the same `/distill` endpoint.
+
+### 7. Archive retrieval
+
+Each finished conversation is also copied into [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault) with LLM-generated category metadata. Browse [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) to retrieve past conversations by category / subcategory.
 
 ## API
 

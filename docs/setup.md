@@ -43,7 +43,11 @@ Expected startup output:
 
 On first run, macOS may prompt for Automation permission for Reminders. Grant it. If the step fails, the server still returns the full final response — check `[reminders]` log lines.
 
-## 4. iPhone Shortcuts Setup（快捷指令配置）
+## 4. Archive behavior
+
+Every completed conversation is archived into [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault). The model classifies it into a category and subcategory, then the service rebuilds [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) so you can retrieve old conversations quickly.
+
+## 5. iPhone Shortcuts Setup（快捷指令配置）
 
 Name the shortcut: `🧠 智能脑暴`
 
@@ -73,18 +77,20 @@ Steps:
     - **Show Alert**: display `serverReply` (the final Milestone report).
 13. **End If**
 
-> The recursive self-call avoids the iOS Shortcuts loop-crash bug and naturally handles multi-turn conversation.
+> The recursive self-call avoids the iOS Shortcuts loop-crash bug and naturally handles multi-turn conversation.  
+> If the model needs fresh external context during clarification, the server may call Google / DuckDuckGo / Bing behind the scenes before returning the next question or final answer.
 
-## 5. Verify end-to-end
+## 6. Verify end-to-end
 
 | Check | How |
 |---|---|
 | Server running | `curl http://localhost:5001/` |
 | Distill works | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"text":"测试想法","reset":true}'` |
 | Vault file created | `ls $BRAIN_VAULT_PATH` |
+| Archive index rebuilt | `ls .local-vault && test -f .local-vault/index.md && echo ok` |
 | Reminder added | Open Reminders app on Mac |
 
-## 6. Error reference
+## 7. Error reference
 
 | Error | Likely cause |
 |---|---|

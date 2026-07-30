@@ -10,6 +10,13 @@ export interface DistillApiResponse {
   text: string;
 }
 
+export interface ArchiveClassification {
+  category: string;
+  subcategory: string;
+  summary: string;
+  tags: string[];
+}
+
 export interface LlmClarifyDecision {
   type: 'clarify';
   message: string;
@@ -21,7 +28,7 @@ export interface LlmFinalDecision {
   markdown: string;
   milestone: string;
   title: string;
+  archive: ArchiveClassification;
 }
 
 export type LlmDecision = LlmClarifyDecision | LlmFinalDecision;
-

@@ -12,13 +12,33 @@ function isFinalDecision(decision: { type: string }): decision is LlmFinalDecisi
   return decision.type === 'final';
 }
 
-async function handleComplete(decision: LlmFinalDecision): Promise<DistillApiResponse> {
+function buildTranscript(session: Array<{ role: 'user' | 'assistant'; content: string }>): string {
+  return session
+    .map(message => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
+    .join('\n\n');
+}
+
+function buildRawText(session: Array<{ role: 'user' | 'assistant'; content: string }>): string {
+  return session
+    .filter(message => message.role === 'user')
+    .map(message => message.content.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function handleComplete(
+  decision: LlmFinalDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<DistillApiResponse> {
   console.log('[distill] 🏁 AI 决定收工，正在固化资产...');
 
   await runFinalizeWritePipeline({
     title: decision.title || 'untitled-idea',
     markdown: decision.markdown,
     milestone: decision.milestone,
+    rawText: buildRawText(session),
+    transcript: buildTranscript(session),
+    archive: decision.archive,
   });
 
   clearSession();
@@ -40,6 +60,6 @@ export async function processDistill(reqData: DistillRequest): Promise<DistillAp
 
   const decision = await makeDecision(session);
 
-  if (isFinalDecision(decision)) return handleComplete(decision);
+  if (isFinalDecision(decision)) return handleComplete(decision, session);
   return handleContinue(decision);
 }

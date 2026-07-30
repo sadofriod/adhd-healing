@@ -2,14 +2,16 @@
 
 [English README](./README.md)
 
-这是一个面向单用户、Mac 本地运行的想法澄清与蒸馏网关。iPhone 快捷指令是主要使用入口，React 网页作为调试工具使用。服务端通过 DeepSeek API（Vercel AI SDK）进行多轮结构化追问，把模糊想法蒸馏成可执行的里程碑任务，并写入本地 Markdown Vault 和 Apple Reminders。
+这是一个面向单用户、Mac 本地运行的想法澄清与蒸馏网关。iPhone 快捷指令是主要使用入口，React 网页作为调试工具使用。服务端通过 DeepSeek API（Vercel AI SDK）进行多轮结构化追问；当需要最新公开资料时，可调用浏览器搜索工具；会话完成后，结果会同时写入主 Vault、按分类归档到 `.local-vault`，并同步到 Apple Reminders。
 
 ## 功能概述
 
 - 通过 `POST /distill` 接口接收 `{ text, reset }` 格式的文字输入，返回 `{ status, text }`。
 - 服务端用内存 Session 维持多轮对话（单用户、单 Session）。
-- 使用 DeepSeek `deepseek-chat` 模型，通过 Vercel AI SDK `generateObject` 做结构化决策。
+- 使用 DeepSeek `deepseek-chat` 模型，通过 Vercel AI SDK 做结构化决策。
+- 当需要最新文档 / 产品动态 / 外部事实时，可调用 Google / DuckDuckGo / Bing 浏览器搜索工具。
 - 会话结束时，将最终 Markdown 写入本地知识库目录（支持 Obsidian）。
+- 每次完成的对话会额外归档到 `.local-vault/<一级分类>/<二级分类>/...`，并自动重建 `.local-vault/index.md` 方便检索。
 - 从结果中提取里程碑，通过 `osascript` 同步到 Apple Reminders。
 - 在 `/` 提供调试用 React 网页客户端。
 
@@ -30,7 +32,7 @@
        │                                    ASK_MORE → 追加到 Session
        └────(CONTINUE: 追问内容)──────────────┤
                                              │
-                                    COMPLETE → 写 Vault + Reminders
+                                    COMPLETE → 写 Vault + 归档索引 + Reminders
        └────(FINISH: Markdown 报告)───────────┘
 ```
 
@@ -39,6 +41,7 @@
 - 运行时：Bun
 - 语言：TypeScript
 - LLM：DeepSeek API（`deepseek-chat`），通过 Vercel AI SDK（`@ai-sdk/openai`）驱动
+- 搜索：浏览器搜索工具（Google / DuckDuckGo / Bing）
 - 数据校验：Zod
 - 调试客户端：React 网页
 
@@ -98,6 +101,10 @@ curl -X POST http://localhost:5001/distill \
 ### 6. 调试网页
 
 在浏览器中打开 `http://localhost:5001/`，可直接与 `/distill` 接口交互。
+
+### 7. 归档检索
+
+每个完成的对话都会复制到 [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault) 中，并带有 LLM 生成的一级/二级分类。可直接打开 [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) 按分类检索历史对话。
 
 ## API
 

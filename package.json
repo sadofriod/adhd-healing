@@ -7,6 +7,7 @@
   "scripts": {
     "build:web": "bun scripts/build-web.ts",
     "start": "pnpm run build:web && bun --env-file=.env server.ts",
+    "archive:reclassify": "bun --env-file=.env scripts/reclassify-local-vault.ts",
     "test": "DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."
   },
