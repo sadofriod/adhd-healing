@@ -1,9 +1,9 @@
-import type { ArchiveClassification } from '../../types.js';
-import { syncToAppleReminders } from '../../services/reminders.js';
+import type { ArchiveClassification } from '../../types';
+import { syncToAppleReminders } from '../../services/reminders';
 import {
   archiveConversation,
   saveToLocalVault,
-} from '../../services/vault.js';
+} from '../../services/vault';
 
 export async function runFinalizeWritePipeline(opts: {
   title: string;

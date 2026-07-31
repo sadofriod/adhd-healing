@@ -1,3 +1,3 @@
-export { classifyArchiveDocument } from './clarification/archive.js';
-export { SYSTEM_PROMPT } from './clarification/agent.js';
-export { makeDecision } from './clarification/service.js';
+export { classifyArchiveDocument } from './clarification/archive';
+export { SYSTEM_PROMPT } from './clarification/agent';
+export { makeDecision } from './clarification/service';

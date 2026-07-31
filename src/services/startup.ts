@@ -1,4 +1,4 @@
-import { config } from '../config/env.js';
+import { config } from '../config/env';
 
 export async function verifyStartupDependencies(): Promise<void> {
   console.log(`[startup] DeepSeek API key configured: ${config.deepseekApiKey.slice(0, 6)}...`);

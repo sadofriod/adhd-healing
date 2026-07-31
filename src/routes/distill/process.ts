@@ -1,12 +1,12 @@
-import type { DistillRequest, DistillApiResponse, LlmFinalDecision } from '../../types.js';
+import type { DistillRequest, DistillApiResponse, LlmFinalDecision } from '../../types';
 import {
   getSession,
   resetSession,
   appendToSession,
   clearSession,
-} from '../../services/session.js';
-import { makeDecision } from '../../services/clarification.js';
-import { runFinalizeWritePipeline } from './finalize.js';
+} from '../../services/session';
+import { makeDecision } from '../../services/clarification';
+import { runFinalizeWritePipeline } from './finalize';
 
 function isFinalDecision(decision: { type: string }): decision is LlmFinalDecision {
   return decision.type === 'final';

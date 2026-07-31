@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractAgentPrompt, SYSTEM_PROMPT } from './agent.js';
+import { extractAgentPrompt, SYSTEM_PROMPT } from './agent';
 
 describe('clarification agent prompt', () => {
   test('loads the prompt body without Agent Markdown frontmatter', () => {

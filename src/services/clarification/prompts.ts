@@ -1,4 +1,4 @@
-import type { SessionMessage } from './types.js';
+import type { SessionMessage } from './types';
 
 const DECISION_PROMPT_TEMPLATE = `
 下面是当前会话历史（JSON）：

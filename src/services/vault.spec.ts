@@ -3,7 +3,7 @@ import {
   buildArchiveIndexMarkdown,
   buildVaultFilename,
   type ArchiveMetadata,
-} from './vault.js';
+} from './vault';
 
 describe('buildVaultFilename', () => {
   it('adds a compact timestamp to avoid same-day overwrites', () => {

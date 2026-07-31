@@ -1,9 +1,9 @@
 import type { JSX } from 'react';
-import { ConversationTimeline } from './components/ConversationTimeline.js';
-import { CurrentPromptCard } from './components/CurrentPromptCard.js';
-import { FinalMarkdownPanel } from './components/FinalMarkdownPanel.js';
-import { TextComposer } from './components/TextComposer.js';
-import { useDistillSession } from './hooks/useDistillSession.js';
+import { ConversationTimeline } from './components/ConversationTimeline';
+import { CurrentPromptCard } from './components/CurrentPromptCard';
+import { FinalMarkdownPanel } from './components/FinalMarkdownPanel';
+import { TextComposer } from './components/TextComposer';
+import { useDistillSession } from './hooks/useDistillSession';
 
 function getComposerDisabled(isSubmitting: boolean, isComplete: boolean): boolean {
   return [isSubmitting, isComplete].some(Boolean);

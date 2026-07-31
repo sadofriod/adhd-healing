@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { config } from '../config/env.js';
+import { config } from '../config/env';
 
 let _client: ReturnType<typeof createOpenAI> | null = null;
 

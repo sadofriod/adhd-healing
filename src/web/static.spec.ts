@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { handleWebAsset } from './static.js';
+import { handleWebAsset } from './static';
 
 describe('handleWebAsset', () => {
   it('serves the HTML shell for the root path', async () => {

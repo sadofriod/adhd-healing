@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { LlmDecision, LlmFinalDecision } from '../../types.js';
+import type { LlmDecision, LlmFinalDecision } from '../../types';
 
 const DEFAULT_CLARIFY_QUESTION = '先别继续铺开。现在最影响判断的那个关键约束是什么？';
 

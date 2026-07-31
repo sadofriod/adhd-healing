@@ -1,10 +1,10 @@
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import type { ArchiveClassification } from '../../types.js';
-import { getLlmClient, CHAT_MODEL } from '../llm-client.js';
-import { getArchiveTaxonomy } from '../vault.js';
-import { getArchiveSystemPrompt } from './archive-agent.js';
-import type { ArchiveDocumentInput } from './types.js';
+import type { ArchiveClassification } from '../../types';
+import { getLlmClient, CHAT_MODEL } from '../llm-client';
+import { getArchiveTaxonomy } from '../vault';
+import { getArchiveSystemPrompt } from './archive-agent';
+import type { ArchiveDocumentInput } from './types';
 
 const ArchiveClassificationSchema = z.object({
   category: z.string().trim().min(1).max(40),

@@ -1,12 +1,12 @@
 import { generateText } from 'ai';
-import type { LlmDecision } from '../../types.js';
-import { getLlmClient, CHAT_MODEL } from '../llm-client.js';
-import { SYSTEM_PROMPT } from './agent.js';
-import { classifyArchiveDocument } from './archive.js';
-import { createBrowserSearchTool } from './browser-search-tool.js';
-import { parseDecision } from './decision.js';
-import { buildDecisionPrompt } from './prompts.js';
-import type { SessionMessage } from './types.js';
+import type { LlmDecision } from '../../types';
+import { getLlmClient, CHAT_MODEL } from '../llm-client';
+import { SYSTEM_PROMPT } from './agent';
+import { classifyArchiveDocument } from './archive';
+import { createBrowserSearchTool } from './browser-search-tool';
+import { parseDecision } from './decision';
+import { buildDecisionPrompt } from './prompts';
+import type { SessionMessage } from './types';
 
 async function generateDecisionText(sessionMessages: SessionMessage[]): Promise<string> {
   const client = getLlmClient();

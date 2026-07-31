@@ -1,7 +1,7 @@
-import { config } from './src/config/env.js';
-import { verifyStartupDependencies } from './src/services/startup.js';
-import { handleDistill } from './src/routes/distill/index.js';
-import { handleWebAsset } from './src/web/static.js';
+import { config } from './src/config/env';
+import { verifyStartupDependencies } from './src/services/startup';
+import { handleDistill } from './src/routes/distill/index';
+import { handleWebAsset } from './src/web/static';
 
 async function handleNonDistillRoute(req: Request, pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null;

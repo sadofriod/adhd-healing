@@ -1,8 +1,8 @@
 import type { Dirent } from 'fs';
 import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join, relative } from 'path';
-import { config } from '../config/env.js';
-import type { ArchiveClassification } from '../types.js';
+import { config } from '../config/env';
+import type { ArchiveClassification } from '../types';
 
 const FALLBACK_SAFE_TITLE = 'untitled-idea';
 const LOCAL_ARCHIVE_DIRNAME = '.local-vault';

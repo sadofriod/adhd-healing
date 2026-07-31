@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DistillRequest } from '../../types.js';
+import type { DistillRequest } from '../../types';
 
 export class ValidationError extends Error {
   constructor(message: string) {

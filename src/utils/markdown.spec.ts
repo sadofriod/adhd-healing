@@ -4,7 +4,7 @@ import {
   extractMilestone,
   extractTitle,
   normalizeFinalMarkdown,
-} from './markdown.js';
+} from './markdown';
 
 const fullMarkdown = `### 🎯 今日灵感内核
 搭建本地想法蒸馏网关

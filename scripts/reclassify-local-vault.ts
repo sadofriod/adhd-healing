@@ -1,8 +1,8 @@
 import type { Dirent } from 'fs';
 import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { dirname, join, relative } from 'path';
-import { classifyArchiveDocument } from '../src/services/clarification.js';
-import { rebuildArchiveIndex } from '../src/services/vault.js';
+import { classifyArchiveDocument } from '../src/services/clarification';
+import { rebuildArchiveIndex } from '../src/services/vault';
 
 const ARCHIVE_ROOT = join(process.cwd(), '.local-vault');
 const INDEX_FILENAME = 'index.md';

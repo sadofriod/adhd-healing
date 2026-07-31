@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getArchiveSystemPrompt } from './archive-agent.js';
+import { getArchiveSystemPrompt } from './archive-agent';
 
 describe('archive agent prompt', () => {
   test('injects the existing taxonomy into the Agent Markdown body', () => {

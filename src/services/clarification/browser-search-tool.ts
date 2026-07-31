@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import { searchWeb } from '../web-search.js';
+import { searchWeb } from '../web-search';
 
 const BrowserSearchArgsSchema = z.object({
   query: z.string().trim().min(1).max(240),

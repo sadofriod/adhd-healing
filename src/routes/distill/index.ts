@@ -1,5 +1,5 @@
-import { validateDistillRequest, ValidationError } from './validate.js';
-import { processDistill } from './process.js';
+import { validateDistillRequest, ValidationError } from './validate';
+import { processDistill } from './process';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

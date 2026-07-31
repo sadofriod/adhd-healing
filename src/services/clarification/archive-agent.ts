@@ -1,4 +1,4 @@
-import { loadAgentPrompt } from './agent.js';
+import { loadAgentPrompt } from './agent';
 
 const ARCHIVE_AGENT_PROMPT = loadAgentPrompt(new URL('./agents/archive.agent.md', import.meta.url));
 

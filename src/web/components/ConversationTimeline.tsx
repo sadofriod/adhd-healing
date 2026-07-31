@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import type { TimelineEntry } from '../types.js';
+import type { TimelineEntry } from '../types';
 
 type ConversationTimelineProps = {
   readonly entries: readonly TimelineEntry[];

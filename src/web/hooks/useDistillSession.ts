@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { DistillApiResponse } from '../../types.js';
-import type { ConversationState, TimelineEntry } from '../types.js';
+import type { DistillApiResponse } from '../../types';
+import type { ConversationState, TimelineEntry } from '../types';
 
 type DistillSessionState = {
   readonly conversation: ConversationState;
