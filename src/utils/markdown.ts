@@ -7,6 +7,13 @@ const DEFAULT_MILESTONE = '明确 20 分钟第一步\n- 写下第一个可执行
 const DEFAULT_REMINDER_STEPS = '- 写下第一个可执行动作';
 const DEFAULT_RAG_REFERENCE_MILESTONE = '未提取到里程碑';
 const MAX_TITLE_LENGTH = 30;
+const REMINDER_TITLE_PREFIX = /^(?:20\s*分钟(?:任务)?|任务)\s*[:：]\s*/i;
+
+export type ReminderContent = {
+  readonly title: string;
+  readonly notes: string;
+  readonly url?: string;
+};
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -20,6 +27,9 @@ function trimMatchGroup(match: RegExpMatchArray | null, group: number): string |
 
 function stripMarkdownDecorators(value: string): string {
   return value
+    .replace(/\$\\to\$/g, '→')
+    .replace(/\$([^$]+)\$/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/^[-*]\s+/, '')
     .replace(/^\[\s?\]\s*/, '')
     .replace(/^\d+\.\s+/, '')
@@ -87,6 +97,33 @@ function getMilestoneSteps(section: string): string {
   return lines.slice(1).join('\n');
 }
 
+function extractDocumentTitle(mdText: string): string | null {
+  const match = mdText.match(/^#\s+(.+)$/m);
+  const heading = match?.[1];
+  return heading ? normalizeSectionLine(heading) : null;
+}
+
+function normalizeReminderTitle(value: string): string {
+  const normalized = normalizeTitleCandidate(value).replace(REMINDER_TITLE_PREFIX, '').trim();
+  return normalized || DEFAULT_TITLE;
+}
+
+function getReminderTitle(mdText: string, fallbackTitle: string): string {
+  const milestoneSection = extractSection(mdText, MILESTONE_HEADER);
+  const [milestoneTitle] = milestoneSection ? getSectionLines(milestoneSection) : [];
+  return normalizeReminderTitle(milestoneTitle ?? fallbackTitle);
+}
+
+function getReminderProject(mdText: string, fallbackTitle: string): string {
+  const sectionTitle = extractTitle(mdText);
+  if (sectionTitle !== DEFAULT_TITLE) return sectionTitle;
+  return extractDocumentTitle(mdText) ?? normalizeReminderTitle(fallbackTitle);
+}
+
+function extractFirstWebUrl(mdText: string): string | undefined {
+  return mdText.match(/https?:\/\/[^\s<>)\]]+/i)?.[0];
+}
+
 export function extractSection(mdText: string, header: string): string | null {
   const escaped = escapeRegex(header);
   const pattern = new RegExp(`(?:^|\\r?\\n)${escaped}\\r?\\n([\\s\\S]*?)(?=\\r?\\n###\\s|$)`, 'i');
@@ -105,23 +142,31 @@ export function extractMilestone(mdText: string): string | null {
   return getSectionTitle(section, DEFAULT_TITLE);
 }
 
-export function buildReminderDescription(mdText: string): string {
-  const summary = extractTitle(mdText);
+export function buildReminderDescription(mdText: string, fallbackTitle = DEFAULT_TITLE): string {
+  const project = getReminderProject(mdText, fallbackTitle);
   const milestoneSection = extractSection(mdText, MILESTONE_HEADER);
   const detailedSteps = milestoneSection
     ? getMilestoneSteps(milestoneSection)
-    : DEFAULT_REMINDER_STEPS;
+    : `- ${normalizeReminderTitle(fallbackTitle)}`;
 
   return [
-    '## 总结',
-    summary,
+    '项目',
+    project,
     '',
-    '## 详细步骤',
+    '下一步',
     detailedSteps,
     '',
-    '## 完整蒸馏输出',
-    mdText.trim(),
+    '预计用时',
+    '20 分钟',
   ].join('\n');
+}
+
+export function buildReminderContent(mdText: string, fallbackTitle: string): ReminderContent {
+  const title = getReminderTitle(mdText, fallbackTitle);
+  const notes = buildReminderDescription(mdText, fallbackTitle);
+  const url = extractFirstWebUrl(mdText);
+
+  return url ? { title, notes, url } : { title, notes };
 }
 
 function getKernelDetails(mdText: string): string {

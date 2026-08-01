@@ -1,5 +1,6 @@
 import { config } from './src/config/env';
 import { verifyStartupDependencies } from './src/services/startup';
+import { closeMcpServers } from './src/services/mcp';
 import { handleDistill } from './src/routes/distill/index';
 import { handleWebAsset } from './src/web/static';
 
@@ -22,6 +23,13 @@ async function handleDistillRoute(req: Request): Promise<Response> {
 }
 
 await verifyStartupDependencies();
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, async () => {
+    await closeMcpServers();
+    process.exit(0);
+  });
+}
 
 const server = Bun.serve({
   port: config.port,

@@ -29,7 +29,7 @@ This repository is intentionally local-first and macOS-hosted.
 ```
 [iPhone Shortcuts] ──(POST { text, reset })──► [Mac Gateway (Bun)]
        ▲                                              │
-       │                                    generateObject → DeepSeek API
+      │                                     generateText → DeepSeek API
        │                                              │
        │                                    ASK_MORE → append to session
        └────(CONTINUE: next question)────────┤
@@ -67,12 +67,14 @@ Required:
 ```env
 BRAIN_VAULT_PATH=/absolute/path/to/your/local/vault
 DEEPSEEK_API_KEY=sk-...
+GITHUB_PERSONAL_ACCESS_TOKEN=github_pat_...
 ```
 
 Optional:
 
 ```env
 PORT=5001
+MCP_CONFIG_PATH=/absolute/path/to/mcp.json
 ```
 
 ### 3. Install and run
@@ -106,7 +108,7 @@ Open `http://localhost:5001/` in a browser. The web client sends text turns to t
 
 ### 7. Archive retrieval
 
-Each finished conversation is also copied into [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault) with LLM-generated category metadata. Browse [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) to retrieve past conversations by category / subcategory.
+Each finished conversation is also copied into [`.local-vault/`](./.local-vault) with LLM-generated category metadata. Browse [`.local-vault/index.md`](./.local-vault/index.md) to retrieve past conversations by category / subcategory.
 
 ## API
 

@@ -20,5 +20,5 @@ user-invocable: false
 
 - `category`：一级分类，中文短语，稳定抽象层，例如“CAD工具”“AI工作流”“产品策略”
 - `subcategory`：二级分类，中文短语，更贴近具体主题
-- `summary`：一句 160 字以内摘要，便于 `index.md` 检索
+- `summary`：一句 140 字以内摘要，只保留主题、结论和关键决策，便于 `index.md` 检索
 - `tags`：2 到 8 个短标签，优先中文，可混合英文技术名词

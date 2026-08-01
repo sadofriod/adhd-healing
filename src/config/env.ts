@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isAbsolute } from 'path';
+import { isAbsolute, resolve } from 'path';
 
 const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().trim().min(1),
@@ -7,6 +7,7 @@ const envSchema = z.object({
     message: 'must be an absolute path',
   }),
   PORT: z.coerce.number().int().positive().max(65535).default(5001),
+  MCP_CONFIG_PATH: z.string().trim().min(1).default(resolve(process.cwd(), 'mcp.json')),
 });
 
 function formatIssuePath(path: (string | number)[]): string {
@@ -29,5 +30,6 @@ export const config = {
   deepseekApiKey: env.DEEPSEEK_API_KEY,
   brainVaultPath: env.BRAIN_VAULT_PATH,
   port: env.PORT,
+  mcpConfigPath: env.MCP_CONFIG_PATH,
 };
 

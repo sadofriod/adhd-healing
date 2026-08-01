@@ -45,7 +45,7 @@ On first run, macOS may prompt for Automation permission for Reminders. Grant it
 
 ## 4. Archive behavior
 
-Every completed conversation is archived into [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault). The model classifies it into a category and subcategory, then the service rebuilds [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) so you can retrieve old conversations quickly.
+Every completed conversation is archived into [`.local-vault/`](../.local-vault). The model classifies it into a category and subcategory, then the service rebuilds [`.local-vault/index.md`](../.local-vault/index.md) so you can retrieve old conversations quickly.
 
 ## 5. iPhone Shortcuts Setup（快捷指令配置）
 

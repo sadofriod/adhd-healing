@@ -1,86 +1,84 @@
-# Web Input Guide
+# Web 调试界面指南
 
-## 1. Entry point
+## 1. 入口
 
-After the service starts, open the web client:
+启动服务后，在 Mac 浏览器打开 `http://localhost:5001/`。
 
-1. On your Mac: `http://localhost:5001/`
-2. On your iPhone: `http://<mac-ip>:5001/` while both devices stay on the same LAN
-3. Optional: in Safari, use `Share -> Add to Home Screen` to make it behave like a lightweight app launcher
+该网页是 `/distill` 文本接口的调试客户端。日常移动端入口仍以 iPhone 快捷指令为主；同一局域网中的 iPhone 也可以访问 `http://<mac-ip>:5001/` 调试页面。
 
-## 2. What the page does
+## 2. 当前能力
 
-The page exposes two input modes in the same conversation shell:
+网页提供以下功能：
 
-1. **Text composer**: sends `application/json` to `POST /distill`
-2. **Audio composer**: records in-browser when possible, or falls back to file upload, then sends `multipart/form-data` to `POST /distill`
+1. 通过文本输入提交想法或回答追问。
+2. 展示当前问题和完整对话时间线。
+3. 在服务端返回 `FINISH` 后展示最终 Markdown。
+4. 通过“新会话”操作，让下一次提交携带 `reset: true`。
 
-The UI direction follows a warm editorial light theme:
+当前不支持浏览器录音、音频上传或 `session_id`。服务端仅维护一个进程级内存会话，不适合多个客户端同时使用。
 
-1. light background with atmospheric gradients instead of flat white
-2. serif display typography paired with a clean sans body font
-3. sage and clay accents instead of default AI purple gradients
-4. mobile-first spacing, large tap targets, and reduced-motion support
+## 3. 对话流程
 
-## 3. Conversation loop
+1. 输入想法并提交。
+2. 服务端返回 `CONTINUE` 时，继续回答返回的单个澄清问题。
+3. 服务端返回 `FINISH` 时，网页展示最终 Markdown，本轮服务端会话随即清空。
+4. 要放弃当前对话并开始新主题，先点击“新会话”，再提交新想法。
 
-Each turn works like this:
+浏览器刷新只会重置网页显示，不会清空服务端内存会话。刷新后如需开始新主题，应先使用“新会话”操作。服务重启会丢失未完成的会话。
 
-1. Read the current clarification prompt in the top card.
-2. Answer with text or audio.
-3. Wait for the page to receive the next JSON response.
-4. Continue until the result panel shows the final Markdown.
+## 4. API 契约
 
-The page stores `session_id` in memory for the current browser session and automatically reuses it between turns. If you refresh the page, start a new conversation.
+### 请求
 
-## 4. iPhone usage notes
-
-1. Safari may ask for microphone permission the first time you try browser recording.
-2. If browser recording is not available, use the file picker and record with the system capture flow.
-3. Keep the page open during a conversation so the in-memory `session_id` is preserved.
-4. The final Markdown can be copied from the result panel into your vault workflow.
-
-## 5. Request contract
-
-### Text turn
+`POST /distill`，请求头为 `Content-Type: application/json`：
 
 ```json
 {
-  "input_mode": "text",
-  "text": "I want to clarify an idea",
-  "session_id": "optional-uuid"
+  "text": "我想澄清一个产品想法",
+  "reset": true
 }
 ```
 
-### Audio turn
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `text` | `string` | 必填，去除首尾空白后不能为空 |
+| `reset` | `boolean` | 可选，默认为 `false`；为 `true` 时先清空当前服务端会话 |
 
-Send `multipart/form-data` with:
-
-1. `input_mode=audio`
-2. `audio=<file>`
-3. `session_id=<uuid>` on follow-up turns
-
-### Response shape
+### 继续追问响应
 
 ```json
 {
-  "session_id": "uuid",
-  "response_type": "clarify",
-  "assistant_message": "What outcome do you want from this idea?",
-  "turn_index": 1,
-  "is_complete": false,
-  "final_markdown": null,
-  "final_title": null,
-  "milestone": null
+  "status": "CONTINUE",
+  "text": "你希望这个想法最终解决谁的什么问题？"
 }
 ```
 
-## 6. Troubleshooting
+### 完成响应
 
-| Symptom | Likely cause |
+```json
+{
+  "status": "FINISH",
+  "text": "## 今日灵感内核\n..."
+}
+```
+
+`FINISH` 的 `text` 是最终 Markdown。完成链路还会写入主 Vault、`.local-vault` 分类归档，并在存在里程碑时尝试写入 Apple Reminders。
+
+### 错误响应
+
+```json
+{
+  "error": "text is required"
+}
+```
+
+请求校验失败返回 `400`；处理链路异常返回 `500`。
+
+## 5. 常见问题
+
+| 现象 | 原因与处理 |
 | --- | --- |
-| Audio button starts but no recording is produced | Browser microphone permission was denied |
-| `400` on an audio turn | The uploaded file was missing or malformed |
-| `400 session_id must be a valid UUID` | The page state was reset and a stale session id was submitted manually |
-| `409` on a follow-up turn | The server already completed or abandoned the referenced session |
-| Final panel stays empty | The conversation is still in `clarify` mode, or the server returned an error |
+| 刷新后时间线消失，但服务端仍接着追问 | 网页状态已重置，服务端内存会话仍存在；使用“新会话”后再提交 |
+| 返回 `400` | 请求体不是有效 JSON，或 `text` 缺失/为空 |
+| 返回 `500` | 检查服务端日志、DeepSeek API Key、网络和 Vault 写入权限 |
+| 最终面板为空 | 当前响应仍是 `CONTINUE`，或请求发生错误 |

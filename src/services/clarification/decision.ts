@@ -13,19 +13,26 @@ const DecisionSchema = z.object({
 
 type ParsedDecision = z.infer<typeof DecisionSchema>;
 type DecisionWithoutArchive = Omit<LlmFinalDecision, 'archive'> | LlmDecision;
+export type DecisionParseResult = DecisionWithoutArchive | {
+  type: 'retry';
+  message: string;
+};
 
 function extractJsonObject(rawText: string): string {
   const match = rawText.match(/\{[\s\S]*\}/);
   return match?.[0] ?? rawText;
 }
 
-function normalizeClarifyDecision(message: string): LlmDecision {
-  const trimmed = message.trim();
-  if (trimmed.endsWith('？') || trimmed.endsWith('?')) {
-    return { type: 'clarify', message: trimmed };
-  }
+function isClarificationRequest(message: string): boolean {
+  if (/[?？]\s*$/u.test(message)) return true;
+  return /^(?:请(?:你)?(?:说明|选择|确认|补充|提供|描述)|能否|是否|要不要|有没有)/u.test(message);
+}
 
-  return { type: 'clarify', message: DEFAULT_CLARIFY_QUESTION };
+function normalizeClarifyDecision(message: string): DecisionParseResult {
+  const trimmed = message.trim();
+  if (!trimmed) return { type: 'clarify', message: DEFAULT_CLARIFY_QUESTION };
+  if (isClarificationRequest(trimmed)) return { type: 'clarify', message: trimmed };
+  return { type: 'retry', message: trimmed };
 }
 
 function getFinalMarkdown(parsed: ParsedDecision): string {
@@ -50,7 +57,7 @@ function normalizeFinalDecision(parsed: ParsedDecision): Omit<LlmFinalDecision, 
   };
 }
 
-export function parseDecision(rawText: string): DecisionWithoutArchive {
+export function parseDecision(rawText: string): DecisionParseResult {
   try {
     const parsed = DecisionSchema.parse(JSON.parse(extractJsonObject(rawText)));
     if (parsed.type === 'clarify') return normalizeClarifyDecision(parsed.message);

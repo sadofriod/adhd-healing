@@ -1,5 +1,7 @@
 # Record Tips 工程化 PRD
 
+> 文档定位：长期产品方向草案，不是当前实现规格。当前已实现范围、API 和验收标准以 [`PRD-MVP.md`](./PRD-MVP.md) 为准；本文中的语音、PostgreSQL、pgvector 等能力尚未实现。
+
 ## 1. 文档说明
 
 - 文档版本：v0.1

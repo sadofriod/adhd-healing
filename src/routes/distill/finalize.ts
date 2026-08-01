@@ -1,5 +1,6 @@
 import type { ArchiveClassification } from '../../types';
 import { syncToAppleReminders } from '../../services/reminders';
+import { buildReminderContent } from '../../utils/markdown';
 import {
   archiveConversation,
   saveToLocalVault,
@@ -33,7 +34,7 @@ export async function runFinalizeWritePipeline(opts: {
 
   if (milestone) {
     try {
-      await syncToAppleReminders(milestone, markdown.slice(0, 200));
+      await syncToAppleReminders(buildReminderContent(markdown, milestone));
     } catch (error) {
       console.error('[reminders] Error syncing reminder:', error);
     }

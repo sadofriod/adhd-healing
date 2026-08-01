@@ -27,7 +27,7 @@
 ```
 [iPhone 快捷指令] ──(POST { text, reset })──► [Mac 网关 (Bun)]
        ▲                                              │
-       │                                    generateObject → DeepSeek API
+      │                                     generateText → DeepSeek API
        │                                              │
        │                                    ASK_MORE → 追加到 Session
        └────(CONTINUE: 追问内容)──────────────┤
@@ -104,7 +104,7 @@ curl -X POST http://localhost:5001/distill \
 
 ### 7. 归档检索
 
-每个完成的对话都会复制到 [`.local-vault/`](/Users/dushihua/dev/apps/adhd-healing/.local-vault) 中，并带有 LLM 生成的一级/二级分类。可直接打开 [`.local-vault/index.md`](/Users/dushihua/dev/apps/adhd-healing/.local-vault/index.md) 按分类检索历史对话。
+每个完成的对话都会复制到 [`.local-vault/`](./.local-vault) 中，并带有 LLM 生成的一级/二级分类。可直接打开 [`.local-vault/index.md`](./.local-vault/index.md) 按分类检索历史对话。
 
 ## API
 
@@ -134,3 +134,7 @@ pnpm test
 pnpm lint
 pnpm exec tsc --noEmit
 ```
+
+## MCP
+
+服务启动时会加载 `mcp.json` 中的 stdio MCP 服务，并将工具注册到澄清 Agent。仓库默认配置官方 GitHub MCP Server；请在 `.env` 中设置 `GITHUB_PERSONAL_ACCESS_TOKEN`，默认启用只读的 `repos`、`issues` 和 `pull_requests` 工具集。

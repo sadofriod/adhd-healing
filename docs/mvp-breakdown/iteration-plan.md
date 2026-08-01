@@ -1,262 +1,76 @@
-# Record Tips MVP Iteration Plan
+# MVP 迭代状态与下一步
 
-## 1. Planning Goal
+## 1. 当前基线
 
-This document turns the MVP scope into a time-boxed delivery schedule.
-The plan assumes one focused engineer building a local-first prototype.
+当前代码已形成可运行的文本 MVP：
 
-## 2. Delivery Strategy
+```text
+iPhone 快捷指令 / React 调试网页
+  -> POST /distill
+  -> DeepSeek 多轮澄清
+  -> 最终 Markdown
+  -> 主 Vault + .local-vault + Apple Reminders
+```
 
-1. Prove infrastructure before polishing the conversation prompts.
-2. Keep one thin vertical slice working at all times: web input -> server response -> next web step.
-3. Front-load external dependency risk: PostgreSQL pgvector, local ASR, LM Studio, and macOS Reminders permissions.
-4. Treat the clarification loop as core product behavior, not as a later enhancement.
-5. Use manual validation checkpoints at the end of each iteration.
+该基线不包含音频、数据库、向量检索、本地模型或多会话 ID。
 
-## 3. Assumptions
+## 2. 已交付迭代
 
-| Item | Assumption |
-| --- | --- |
-| Team size | 1 engineer |
-| Work mode | Full-time focus |
-| Runtime | Bun + TypeScript on macOS |
-| External services | Local Docker PostgreSQL, local ASR, and local LM Studio are available |
-| Input client | The React web client can send audio or text and can preserve `session_id` across turns |
-
-## 4. Iteration Timeline
-
-| Iteration | Duration | Goal | Exit Criteria |
-| --- | --- | --- | --- |
-| Iteration 0 | 0.5 day | Environment readiness | DB container, ASR, LM Studio, Bun runtime, `.env` contract all verified |
-| Iteration 1 | 1.5 days | Service bootstrap and session/database initialization | Service starts, env validation works, session tables and `my_ideas` are auto-created |
-| Iteration 2 | 1.5 days | Multimodal input and transcription | The web client can send text or audio; audio can be transcribed |
-| Iteration 3 | 2 days | Conversation API and clarification loop | `/distill` returns JSON and supports multi-turn `session_id` continuation |
-| Iteration 4 | 2 days | RAG retrieval, final distillation, and local vault persistence | Completed sessions retrieve history, finalize Markdown, insert DB row, and create vault file |
-| Iteration 5 | 1 day | Reminders integration and web round-trip | Milestone extraction works and reminders write is attempted safely |
-| Iteration 6 | 1.5 days | End-to-end validation and ops docs | Audio and text flows both pass multi-turn manual validation and setup docs are complete |
-
-Total suggested schedule: 10 working days.
-
-## 5. Iteration Breakdown
-
-### Iteration 0
-
-Goal: remove environment unknowns before coding.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-002 | Install project dependencies |
-| T-003 | Define `.env` contract |
-| T-005 | Draft web request/response contract |
-| T-034 | Draft local setup steps early |
-
-Validation:
-
-| Check | Expected Result |
-| --- | --- |
-| Docker `pgvector/pgvector:pg16` container starts | Port `5432` is reachable |
-| Local ASR endpoint or service reachable | A sample audio can be accepted for transcription |
-| LM Studio model endpoint reachable | `http://localhost:1234/v1` responds |
-| Bun available locally | `bun --version` succeeds |
-
-Risk focus:
-
-- ASR integration path may vary by local runtime choice.
-- LM Studio model names may differ from the plan.
-- Browser multipart upload may need tighter payload conventions.
-
-### Iteration 1
-
-Goal: make the service boot predictably and create all required storage primitives.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-001 | Create Bun service entry |
-| T-004 | Add config validation |
-| T-009 | Create PostgreSQL client |
-| T-010 | Enable pgvector extension |
-| T-011 | Create `idea_sessions` table |
-| T-012 | Create `session_messages` table |
-| T-013 | Create `my_ideas` table |
-| T-014 | Add pgvector formatter |
-
-Deliverable:
-
-- Service starts and initializes database structures automatically.
-
-Exit criteria:
-
-1. Missing `.env` values cause immediate startup failure.
-2. Fresh database is ready after one boot.
-3. Session tables and final idea table exist with expected columns.
-
-### Iteration 2
-
-Goal: accept both user input modes and normalize them into the same text pipeline.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-006 | Implement text input normalization |
-| T-007 | Implement audio upload parsing |
-| T-008 | Implement transcription adapter |
-| T-018 | Create unified `POST /distill` handler skeleton |
-| T-019 | Add multimodal request validation |
-
-Deliverable:
-
-- The web client can send either manual text or audio and the server can normalize each request into a usable text payload.
-
-Exit criteria:
-
-1. Invalid text-mode requests return `400`.
-2. Invalid audio-mode requests return `400`.
-3. A valid audio request produces transcription text.
-
-### Iteration 3
-
-Goal: make the service conversational instead of one-shot.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-015 | Configure LM Studio client |
-| T-016 | Add embedding generation with strict model availability |
-| T-017 | Add clarification and final-distill prompts |
-| T-020 | Implement session create/load behavior |
-| T-021 | Persist user turns |
-| T-022 | Build aggregated session context |
-| T-024 | Implement clarify-or-final decision logic |
-| T-025 | Persist assistant clarification turns |
-
-Deliverable:
-
-- Sending one turn returns a structured JSON response that either asks a focused question or ends the session with a final result.
-
-Exit criteria:
-
-1. First turn creates a session and returns a `session_id`.
-2. Follow-up turn with the same `session_id` preserves context.
-3. Assistant asks at most one focused question per turn.
-
-### Iteration 4
-
-Goal: turn the conversational loop into a durable knowledge pipeline.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-023 | Add historical similarity retrieval query |
-| T-026 | Implement final Markdown generation and parsing |
-| T-027 | Persist completed ideas into `my_ideas` |
-| T-028 | Create vault directory bootstrap and filename policy |
-| T-029 | Write final Markdown file template |
-
-Deliverable:
-
-- Completed sessions retrieve history, write a final DB record, and create a local Markdown note.
-
-Exit criteria:
-
-1. A completed session writes one final idea row and one vault file.
-2. A later similar session retrieves prior context.
-3. Created note is readable in Obsidian-compatible format.
-
-### Iteration 5
-
-Goal: connect the final output to a real action system without destabilizing the main conversation flow.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-030 | Implement JXA reminders sync |
-| T-031 | Add guard when no milestone exists |
-| T-032 | Improve logs for session, retrieval, persistence, and reminder steps |
-| T-033 | Document web loop behavior |
-
-Deliverable:
-
-- Finalized sessions can dispatch a reminder and the web flow is documented clearly.
-
-Exit criteria:
-
-1. Reminder appears in the default Reminders list on success.
-2. Permission failures are logged and do not break final API response.
-3. Web flow for follow-up turns is documented with `session_id` handling.
-
-### Iteration 6
-
-Goal: prove the full loop is repeatable for both audio and text paths.
-
-Tasks:
-
-| Task ID | Description |
-| --- | --- |
-| T-034 | Finalize setup and runbook docs |
-| T-035 | Execute full manual validation for text mode |
-| T-036 | Execute full manual validation for audio mode |
-| T-037 | Validate cross-session RAG reuse |
-
-Deliverable:
-
-- A reproducible local MVP with setup documentation and evidence for both input modes.
-
-Exit criteria:
-
-1. New machine setup steps are complete enough to reproduce the stack.
-2. Text sessions support clarifying turns and final persistence.
-3. Audio sessions support transcription, clarifying turns, and final persistence.
-4. A later session can reference earlier similar ideas.
-
-## 6. Milestones
-
-| Milestone | Planned Day | Outcome |
+| 迭代 | 状态 | 交付结果 |
 | --- | --- | --- |
-| M1 | Day 2 | Service boots and storage primitives auto-initialize |
-| M2 | Day 4 | Text and audio requests are accepted and normalized |
-| M3 | Day 6 | `/distill` supports multi-turn clarification sessions |
-| M4 | Day 8 | Completed sessions persist to DB and local vault with RAG reuse |
-| M5 | Day 9 | Reminder sync and web round-trip are integrated safely |
-| M6 | Day 10 | MVP passes audio, text, and cross-session validation |
+| I-01 服务基础 | 已完成 | Bun 服务、环境校验、React 静态资源、默认端口 |
+| I-02 对话闭环 | 已完成 | `{ text, reset }` API、内存会话、`CONTINUE` / `FINISH` |
+| I-03 模型能力 | 已完成 | DeepSeek 澄清决策、浏览器搜索、归档分类 |
+| I-04 资产固化 | 已完成 | 主 Vault、分类归档、索引重建、原始文本与对话保留 |
+| I-05 行动与界面 | 已完成 | Reminders 非阻塞同步、React 文本调试界面、快捷指令说明 |
 
-## 7. Risk Register
+## 3. 建议下一迭代：可靠性
 
-| Risk | Impact | Mitigation | Trigger to Escalate |
-| --- | --- | --- | --- |
-| Local ASR integration is unstable or too slow | Voice path blocked or degraded | Validate with a sample audio in Iteration 0 and keep a clear fallback error path | Audio cannot be transcribed reliably by Iteration 2 |
-| LM Studio model not loaded or model name mismatch | Clarification/final path blocked | Validate model availability in Iteration 0 | Service cannot return a first valid question by Iteration 3 |
-| PostgreSQL pgvector extension missing | Retrieval path blocked | Use official pgvector image and boot-time extension creation | Table init fails on a fresh database |
-| Browser loses `session_id` between turns | Clarification context breaks | Keep JSON response contract minimal and document storage clearly | Second turn cannot resume same session |
-| LLM asks too many or low-value questions | User drop-off increases | Cap question count and define focused prompting rules | More than 3 turns are often needed for simple ideas |
-| macOS automation permissions block Reminders | Reminder step degrades | Make reminder path non-blocking and log clearly | Reminder step crashes final response flow |
-| Embedding model missing or mismatched | Retrieval path is blocked | Fail fast on startup and keep model names aligned with LM Studio | Service cannot complete startup or embedding requests |
+目标：先为当前行为建立回归保护，再扩大产品范围。
 
-## 8. Go/No-Go Checklist
+| 顺序 | 任务 | 退出条件 |
+| --- | --- | --- |
+| 1 | 补请求校验和路由测试 | `400`、`500`、成功响应均有覆盖 |
+| 2 | 补会话与完成链路测试 | 重置、清空、文件写入、提醒降级均可验证 |
+| 3 | 补 React Hook 测试 | 继续、完成、错误和新会话行为稳定 |
+| 4 | 增加浏览器 E2E | 文本多轮闭环可自动重复执行 |
+| 5 | 完成真实环境冒烟测试 | DeepSeek、两个 Vault 和 Reminders 路径均留有结果记录 |
 
-Release to personal daily use only if all checks below are true:
+## 4. 后续迭代候选
 
-1. Service startup is stable across restarts.
-2. The web client can complete at least one text session and one audio session.
-3. At least one session proves multi-turn clarification with the same `session_id`.
-4. A later session proves historical retrieval reuse.
-5. Local vault files are created with correct Markdown structure.
-6. Reminder sync failures do not break the final API path.
-7. Setup steps can be replayed from documentation.
+### I-07 会话隔离
 
-## 9. After-MVP Backlog
+先引入持久 `session_id` 和并发隔离，再考虑多客户端或多人使用。需要同时迁移快捷指令和网页 API。
 
-These items are intentionally excluded from the current schedule:
+### I-08 音频入口
 
-1. Native iOS app instead of the web input page.
-2. Raw audio archive, playback UI, and waveform editing.
-3. Multi-user accounts and cloud sync.
-4. Topic clustering and automatic merge jobs.
-5. Search UI or web management dashboard.
+在文本闭环稳定后增加音频上传与 ASR。必须先决定请求协议、文件限制、转写提供方和隐私边界。
+
+### I-09 历史语义检索
+
+在有足够归档样本并定义召回评估后，再引入 PostgreSQL/pgvector 或其他索引方案。当前 `.local-vault/index.md` 只提供分类浏览，不是 RAG。
+
+### I-10 本地模型
+
+本地 LM Studio 或其他离线模型属于独立架构变更，需要模型兼容性、硬件资源和云端回退验证。
+
+## 5. 风险登记
+
+| 风险 | 当前影响 | 处理方向 |
+| --- | --- | --- |
+| 单全局内存会话 | 多客户端输入可能互相污染 | 优先设计会话 ID 和存储边界 |
+| 服务重启丢失会话 | 未完成对话无法恢复 | 在会话隔离迭代中持久化 |
+| 外部模型或搜索不可用 | 当前请求可能返回 `500` | 增加超时、错误分类和可观测性 |
+| Vault 写入失败 | 完成请求失败 | 增加路径预检和原子写入评估 |
+| 归档写入部分成功 | 主 Vault 与归档可能短暂不一致 | 增加幂等标识或补偿机制 |
+| Reminders 权限缺失 | 只丢失行动同步 | 保持非阻塞并提供清晰日志 |
+
+## 6. 当前发布检查
+
+1. `pnpm test` 通过。
+2. `pnpm lint` 通过。
+3. `pnpm exec tsc --noEmit` 通过。
+4. `pnpm run build:web` 通过。
+5. 使用真实 DeepSeek Key 完成至少一轮多轮对话。
+6. 检查主 Vault、`.local-vault` 和索引产物。
+7. 验证 Reminders 成功路径或权限失败降级路径。
