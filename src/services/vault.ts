@@ -40,7 +40,7 @@ type ParsedFrontMatter = {
   tags: string[];
 };
 
-function buildSafeTitle(title: string): string {
+export function buildSafeVaultTitle(title: string): string {
   const safeTitle = title
     .replace(/[^\w\u4e00-\u9fa5 -]/g, '')
     .replace(/\s+/g, '-')
@@ -56,7 +56,7 @@ function buildTimestamp(now: Date): string {
 }
 
 function sanitizeArchiveSegment(value: string, fallback: string): string {
-  const segment = buildSafeTitle(value).toLowerCase();
+  const segment = buildSafeVaultTitle(value).toLowerCase();
   if (segment.length > 0) return segment;
   return fallback;
 }
@@ -85,7 +85,7 @@ function toPortablePath(path: string): string {
 export function buildVaultFilename(title: string, now: Date = new Date()): string {
   const date = now.toISOString().split('T')[0];
   const timestamp = buildTimestamp(now);
-  const safeTitle = buildSafeTitle(title);
+  const safeTitle = buildSafeVaultTitle(title);
   return `${date}-${timestamp}-${safeTitle}.md`;
 }
 
@@ -197,7 +197,7 @@ function buildArchiveMetadata(
   relativePath: string,
   frontMatter: ParsedFrontMatter | null
 ): ArchiveMetadata {
-  const fallbackTitle = buildSafeTitle(relativePath.replace(/\.md$/i, ''));
+  const fallbackTitle = buildSafeVaultTitle(relativePath.replace(/\.md$/i, ''));
   const parsed = frontMatter ?? {
     title: fallbackTitle,
     date: new Date(0).toISOString(),

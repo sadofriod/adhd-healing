@@ -20,6 +20,11 @@
         "GITHUB_TOOLSETS": "repos,issues,pull_requests",
         "GITHUB_READ_ONLY": "1"
       }
+    },
+    "obsidian": {
+      "type": "sse",
+      "url": "http://localhost:3001/sse",
+      "exposeToModel": false
     }
   }
 }

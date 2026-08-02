@@ -163,11 +163,94 @@ button {
 }
 
 .prompt-card,
+.progress-card,
 .composer-card,
 .timeline-card,
 .result-card {
   border-radius: var(--radius-lg);
   padding: 24px;
+}
+
+.progress-heading {
+  margin-bottom: 12px;
+}
+
+.progress-scroller {
+  background: rgba(36, 65, 62, 0.06);
+  border: 1px solid rgba(36, 65, 62, 0.1);
+  border-radius: var(--radius-md);
+  height: 220px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  scroll-behavior: smooth;
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.progress-item {
+  align-items: flex-start;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 0.92rem;
+  gap: 10px;
+  line-height: 1.55;
+}
+
+.progress-details {
+  min-width: 0;
+}
+
+.progress-details summary {
+  color: var(--text-main);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.progress-details p {
+  background: rgba(255, 255, 255, 0.52);
+  border-left: 2px solid rgba(86, 117, 96, 0.3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.progress-phase {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 2px;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.progress-phase-process {
+  background: rgba(86, 117, 96, 0.14);
+  color: var(--accent-sage);
+}
+
+.progress-phase-tool-call {
+  background: rgba(36, 65, 62, 0.12);
+  color: var(--accent-ink);
+}
+
+.progress-phase-sub-agent {
+  background: rgba(183, 105, 76, 0.14);
+  color: var(--accent-clay);
+}
+
+.progress-placeholder {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
 }
 
 .panel-heading {
@@ -445,6 +528,7 @@ button {
 
   .hero-card,
   .prompt-card,
+  .progress-card,
   .composer-card,
   .timeline-card,
   .result-card {

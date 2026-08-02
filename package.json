@@ -1,18 +1,19 @@
 {
   "name": "adhd-healing",
   "version": "0.2.0",
-  "description": "Cloud-first idea clarification gateway powered by DeepSeek",
+  "description": "Obsidian-first idea clarification gateway powered by DeepSeek and MCP",
   "type": "module",
   "packageManager": "pnpm@10.22.0",
   "scripts": {
     "build:web": "bun scripts/build-web.ts",
-    "start": "pnpm run build:web && bun --env-file=.env server.ts",
+    "start": "pnpm run build:web && bun --env-file=.env scripts/start.ts",
     "archive:reclassify": "bun --env-file=.env scripts/reclassify-local-vault.ts",
     "test": "DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.22",
+    "@smith-and-web/obsidian-mcp-server": "1.4.0",
     "ai": "^4.3.16",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

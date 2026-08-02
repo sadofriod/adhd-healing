@@ -1,10 +1,17 @@
-import type { ArchiveClassification } from '../../types';
-import { syncToAppleReminders } from '../../services/reminders';
-import { buildReminderContent } from '../../utils/markdown';
+import type {
+  ArchiveClassification,
+  DeepResearchArtifact,
+} from '../../types';
 import {
-  archiveConversation,
-  saveToLocalVault,
-} from '../../services/vault';
+  buildReminderTitle,
+  syncToAppleReminders,
+} from '../../services/reminders';
+import { saveObsidianArtifactBundle } from '../../services/obsidian-artifacts';
+
+export type FinalizeWriteResult = {
+  readonly directoryPath: string;
+  readonly mainLink: string;
+};
 
 export async function runFinalizeWritePipeline(opts: {
   title: string;
@@ -13,7 +20,8 @@ export async function runFinalizeWritePipeline(opts: {
   rawText: string;
   transcript: string;
   archive: ArchiveClassification;
-}): Promise<void> {
+  researchArtifacts: readonly DeepResearchArtifact[];
+}): Promise<FinalizeWriteResult> {
   const {
     title,
     markdown,
@@ -21,22 +29,42 @@ export async function runFinalizeWritePipeline(opts: {
     rawText,
     transcript,
     archive,
+    researchArtifacts,
   } = opts;
 
-  await saveToLocalVault(title, markdown, rawText);
-  await archiveConversation({
+  const bundle = await saveObsidianArtifactBundle({
     title,
-    finalMarkdown: markdown,
-    rawText,
-    transcript,
-    classification: archive,
+    markdown: [
+      markdown,
+      '',
+      '## 原始意识流记录',
+      '',
+      rawText,
+      '',
+      '## 对话记录',
+      '',
+      transcript,
+    ].join('\n'),
+    milestone,
+    category: archive.category,
+    subcategory: archive.subcategory,
+    tags: archive.tags,
+    researchArtifacts,
   });
 
   if (milestone) {
     try {
-      await syncToAppleReminders(buildReminderContent(markdown, milestone));
+      await syncToAppleReminders(buildReminderTitle({
+        milestoneTitle: milestone,
+        obsidianTitle: title,
+      }));
     } catch (error) {
       console.error('[reminders] Error syncing reminder:', error);
     }
   }
+
+  return {
+    directoryPath: bundle.directoryPath,
+    mainLink: bundle.mainLink,
+  };
 }

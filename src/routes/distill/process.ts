@@ -1,4 +1,9 @@
-import type { DistillRequest, DistillApiResponse, LlmFinalDecision } from '../../types';
+import type {
+  DistillRequest,
+  DistillApiResponse,
+  LlmFinalDecision,
+  LlmProgressReporter,
+} from '../../types';
 import {
   getSession,
   resetSession,
@@ -28,21 +33,38 @@ function buildRawText(session: Array<{ role: 'user' | 'assistant'; content: stri
 
 async function handleComplete(
   decision: LlmFinalDecision,
-  session: Array<{ role: 'user' | 'assistant'; content: string }>
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmProgressReporter
 ): Promise<DistillApiResponse> {
   console.log('[distill] 🏁 AI 决定收工，正在固化资产...');
+  reportProgress({
+    type: 'progress',
+    phase: 'tool-call',
+    message: '正在通过 MCP 固化 Obsidian 资产并创建提醒',
+  });
 
-  await runFinalizeWritePipeline({
+  const artifactBundle = await runFinalizeWritePipeline({
     title: decision.title || 'untitled-idea',
     markdown: decision.markdown,
     milestone: decision.milestone,
     rawText: buildRawText(session),
     transcript: buildTranscript(session),
     archive: decision.archive,
+    researchArtifacts: decision.researchArtifacts,
   });
 
   clearSession();
-  return { status: 'FINISH', text: decision.markdown };
+  return {
+    status: 'FINISH',
+    text: [
+      '🎉 澄清完成！',
+      '',
+      `已通过 MCP 归档至 Obsidian: ${artifactBundle.mainLink}`,
+      `产物目录: ${artifactBundle.directoryPath}`,
+      `深度调研报告: ${decision.researchArtifacts.length} 份`,
+      '已下发极简任务到 Reminders。',
+    ].join('\n'),
+  };
 }
 
 function handleContinue(decision: { message: string }): DistillApiResponse {
@@ -51,15 +73,18 @@ function handleContinue(decision: { message: string }): DistillApiResponse {
   return { status: 'CONTINUE', text: decision.message };
 }
 
-export async function processDistill(reqData: DistillRequest): Promise<DistillApiResponse> {
+export async function processDistill(
+  reqData: DistillRequest,
+  reportProgress: LlmProgressReporter
+): Promise<DistillApiResponse> {
   if (reqData.reset) resetSession();
 
   const session = getSession();
   console.log(`[distill] 📥 User: ${reqData.text}`);
   session.push({ role: 'user', content: reqData.text });
 
-  const decision = await makeDecision(session);
+  const decision = await makeDecision(session, reportProgress);
 
-  if (isFinalDecision(decision)) return handleComplete(decision, session);
+  if (isFinalDecision(decision)) return handleComplete(decision, session, reportProgress);
   return handleContinue(decision);
 }

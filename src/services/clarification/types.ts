@@ -1,10 +1,10 @@
 export type SessionMessage = {
-  role: 'user' | 'assistant';
-  content: string;
+  readonly role: 'user' | 'assistant';
+  readonly content: string;
 };
 
 export type ArchiveDocumentInput = {
-  title: string;
-  markdown: string;
-  sessionMessages?: SessionMessage[];
+  readonly title: string;
+  readonly markdown: string;
+  readonly sessionMessages?: readonly SessionMessage[];
 };

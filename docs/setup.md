@@ -8,6 +8,7 @@
 | pnpm | ≥ 10 | Package manager |
 | macOS | — | Required for Reminders sync via `osascript` |
 | DeepSeek API Key | — | [platform.deepseek.com](https://platform.deepseek.com) |
+| Obsidian MCP Server | `@smith-and-web/obsidian-mcp-server@1.4.0` | Direct filesystem access; Obsidian does not need to stay open |
 
 ## 1. Configure environment
 
@@ -20,7 +21,10 @@ Edit `.env`:
 ```env
 BRAIN_VAULT_PATH=/absolute/path/to/your/vault
 DEEPSEEK_API_KEY=sk-...
+GITHUB_PERSONAL_ACCESS_TOKEN=github_pat_...
 PORT=5001
+OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
+OBSIDIAN_NOTE_FOLDER=Brainstorm
 ```
 
 ## 2. Install and start
@@ -30,22 +34,35 @@ pnpm install
 pnpm start
 ```
 
+The start command creates `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`, uses that artifact
+directory as the Obsidian MCP Vault, waits for its health endpoint, and then launches
+the gateway. Both processes stop together.
+The default [MCP configuration](../mcp.json) connects to `http://localhost:3001/sse`
+and retains the read-only GitHub MCP server for repository context.
+
 Expected startup output:
 
 ```
+[start] Obsidian MCP is healthy at http://localhost:3001/health
 [startup] DeepSeek API key configured: sk-abc...
-[startup] Brain vault path: /path/to/vault
+[startup] Obsidian vault path: /path/to/vault/Brainstorm
+[mcp] Loaded ... tools from 2 server(s).
 [startup] Dependencies verified.
 [server] 🚀 Gateway listening on http://localhost:5001
 ```
 
 ## 3. Apple Reminders permissions
 
-On first run, macOS may prompt for Automation permission for Reminders. Grant it. If the step fails, the server still returns the full final response — check `[reminders]` log lines.
+On first run, macOS may prompt for Automation permission for Reminders. Grant it.
+Reminders receive only a timestamped action title and an Obsidian `[[wiki-link]]`
+reference; the full report remains in Obsidian.
 
-## 4. Archive behavior
+## 4. Obsidian archive behavior
 
-Every completed conversation is archived into [`.local-vault/`](../.local-vault). The model classifies it into a category and subcategory, then the service rebuilds [`.local-vault/index.md`](../.local-vault/index.md) so you can retrieve old conversations quickly.
+Every completed conversation is written through the configured MCP tool directly
+into the Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. Each note contains
+YAML properties, the full report, `[[wiki-links]]`, the original input, and the
+conversation transcript.
 
 ## 5. iPhone Shortcuts Setup（快捷指令配置）
 
@@ -74,7 +91,7 @@ Steps:
 11. **If** `currentStatus` equals `CONTINUE`:
     - **Run Shortcut**: Select `🧠 智能脑暴` (itself!), pass `serverReply` as input.
 12. **Otherwise** (FINISH):
-    - **Show Alert**: display `serverReply` (the final Milestone report).
+    - **Show Alert**: display `serverReply` (a concise Obsidian archive confirmation).
 13. **End If**
 
 > The recursive self-call avoids the iOS Shortcuts loop-crash bug and naturally handles multi-turn conversation.  
@@ -85,9 +102,9 @@ Steps:
 | Check | How |
 |---|---|
 | Server running | `curl http://localhost:5001/` |
+| MCP server running | `curl http://localhost:3001/health` |
 | Distill works | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"text":"测试想法","reset":true}'` |
-| Vault file created | `ls $BRAIN_VAULT_PATH` |
-| Archive index rebuilt | `ls .local-vault && test -f .local-vault/index.md && echo ok` |
+| Vault file created | `ls "$BRAIN_VAULT_PATH/$OBSIDIAN_NOTE_FOLDER"` |
 | Reminder added | Open Reminders app on Mac |
 
 ## 7. Error reference
@@ -95,6 +112,8 @@ Steps:
 | Error | Likely cause |
 |---|---|
 | `Invalid environment variables` | `.env` missing `DEEPSEEK_API_KEY` or `BRAIN_VAULT_PATH` |
+| MCP connection failure on startup | Obsidian MCP Server is not listening on port `3001` |
+| `MCP tool is unavailable` | `OBSIDIAN_MCP_WRITE_TOOL` does not match the prefixed MCP tool name |
 | `400` from `/distill` | `text` field missing or empty |
-| `[reminders] Failed to add reminder` | macOS Automation permission not granted |
+| `[reminders] Error syncing reminder` | macOS Automation permission not granted |
 | DeepSeek API error | Invalid API key or rate limit |

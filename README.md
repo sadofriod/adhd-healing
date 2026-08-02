@@ -2,7 +2,7 @@
 
 [中文说明](./README.zh-CN.md)
 
-Cloud-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service accepts text, calls DeepSeek via the Vercel AI SDK for structured multi-turn clarification, can trigger browser search during clarification, and persists the final result to both your main local vault and a categorized `.local-vault` archive with an `index.md` entry point.
+Obsidian-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report through an Obsidian MCP server and sends only a concise action reference to Apple Reminders.
 
 ## What It Does
 
@@ -10,9 +10,10 @@ Cloud-first idea clarification and distillation gateway for a single Mac-hosted 
 - Manages multi-turn conversation state in memory on the server (single-user, single-session).
 - Uses DeepSeek (`deepseek-chat`) via the Vercel AI SDK for structured decision-making.
 - Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
-- Writes finalized Markdown into a local vault directory (Obsidian-compatible).
-- Archives each completed conversation into `.local-vault/<category>/<subcategory>/...` and rebuilds `.local-vault/index.md` for category-based retrieval.
-- Extracts milestones and syncs them into Apple Reminders via `osascript`.
+- Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser search and read-only MCP tools.
+- Writes YAML and semantic wiki-link networks through an Obsidian MCP server for Graph View.
+- Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
+- Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a debug React web client at `/`.
 
 ## Platform Scope
@@ -34,8 +35,9 @@ This repository is intentionally local-first and macOS-hosted.
        │                                    ASK_MORE → append to session
        └────(CONTINUE: next question)────────┤
                                              │
-                                    COMPLETE → write vault + archive index + Reminders
-       └────(FINISH: markdown report)────────┘
+                                    COMPLETE → parallel research agents
+                                             → artifact bundle + Reminders
+       └────(FINISH: concise confirmation)───┘
 ```
 
 ## Stack
@@ -44,6 +46,7 @@ This repository is intentionally local-first and macOS-hosted.
 - Language: TypeScript
 - LLM: DeepSeek API (`deepseek-chat`) via Vercel AI SDK (`@ai-sdk/openai`)
 - Search: browser search tool (Google / DuckDuckGo / Bing)
+- Knowledge persistence: Obsidian MCP over SSE
 - Validation: Zod
 - Debug client: React web app
 
@@ -75,6 +78,8 @@ Optional:
 ```env
 PORT=5001
 MCP_CONFIG_PATH=/absolute/path/to/mcp.json
+OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
+OBSIDIAN_NOTE_FOLDER=Brainstorm
 ```
 
 ### 3. Install and run
@@ -83,6 +88,11 @@ MCP_CONFIG_PATH=/absolute/path/to/mcp.json
 pnpm install
 pnpm start
 ```
+
+`pnpm start` starts the Obsidian MCP server, waits for its health endpoint, and then
+starts the gateway. `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` is created and used as
+the MCP Vault, so generated reports are written directly at that Vault's root.
+Stopping the command shuts down both processes.
 
 ### 4. Verify the endpoint
 
@@ -106,9 +116,25 @@ See [docs/setup.md](./docs/setup.md) for the full iPhone Shortcuts configuration
 
 Open `http://localhost:5001/` in a browser. The web client sends text turns to the same `/distill` endpoint.
 
-### 7. Archive retrieval
+### 7. Obsidian archive
 
-Each finished conversation is also copied into [`.local-vault/`](./.local-vault) with LLM-generated category metadata. Browse [`.local-vault/index.md`](./.local-vault/index.md) to retrieve past conversations by category / subcategory.
+Each finished conversation creates a timestamped artifact directory under the
+Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. The directory contains
+the main report and any highly relevant execution-focused research reports.
+Parent/child frontmatter and bidirectional wiki-links connect every report. The
+main report also retains the raw input and transcript.
+
+Research topics are selected by the clarification agent only when they directly
+affect execution. There is no fixed topic limit. All research agents must finish
+successfully before any report is written; a research failure aborts the
+finalization request.
+
+## MCP
+
+The default [MCP configuration](./mcp.json) keeps both integrations:
+
+- GitHub MCP runs through Docker with read-only `repos`, `issues`, and `pull_requests` tools exposed to the clarification agent.
+- Obsidian MCP connects over SSE and is called directly by the final persistence pipeline.
 
 ## API
 
@@ -134,7 +160,7 @@ Each finished conversation is also copied into [`.local-vault/`](./.local-vault)
 ### Error behavior
 
 - `400`: invalid payload
-- `500`: unhandled processing failure
+- `500`: unhandled processing, research, or persistence failure
 
 ## Development
 

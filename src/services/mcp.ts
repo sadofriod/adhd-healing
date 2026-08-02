@@ -1,58 +1,16 @@
-import { readFile } from 'fs/promises';
 import { experimental_createMCPClient, type ToolSet } from 'ai';
 import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
-import { z } from 'zod';
+import {
+  loadMcpConfig,
+  resolveMcpEnvironment,
+  type McpConfig,
+} from './mcpConfig';
 
-const ENV_REFERENCE_PATTERN = /^\$\{env:([A-Z][A-Z0-9_]*)\}$/;
-
-const StdioServerSchema = z.object({
-  type: z.literal('stdio'),
-  command: z.string().trim().min(1),
-  args: z.array(z.string()).default([]),
-  env: z.record(z.string()).default({}),
-  cwd: z.string().trim().min(1).optional(),
-});
-
-const McpConfigSchema = z.object({
-  servers: z.record(StdioServerSchema),
-});
-
-export type McpConfig = z.infer<typeof McpConfigSchema>;
 type McpClient = Awaited<ReturnType<typeof experimental_createMCPClient>>;
 
 let clients: readonly McpClient[] = [];
 let tools: ToolSet = {};
-
-export function parseMcpConfig(rawConfig: unknown): McpConfig {
-  return McpConfigSchema.parse(rawConfig);
-}
-
-function resolveEnvironmentValue(
-  value: string,
-  runtimeEnv: Readonly<Record<string, string | undefined>>
-): string {
-  const referenceMatch = value.match(ENV_REFERENCE_PATTERN);
-  if (!referenceMatch) return value;
-  return getRequiredEnvironmentValue(referenceMatch[1], runtimeEnv);
-}
-
-function getRequiredEnvironmentValue(
-  name: string,
-  runtimeEnv: Readonly<Record<string, string | undefined>>
-): string {
-  const resolvedValue = runtimeEnv[name];
-  if (!resolvedValue) throw new Error(`Missing environment variable ${name} for MCP server`);
-  return resolvedValue;
-}
-
-export function resolveMcpEnvironment(
-  configuredEnv: Readonly<Record<string, string>>,
-  runtimeEnv: Readonly<Record<string, string | undefined>>
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(configuredEnv).map(([name, value]) => [name, resolveEnvironmentValue(value, runtimeEnv)])
-  );
-}
+let directTools: ToolSet = {};
 
 function compactEnvironment(
   environment: Readonly<Record<string, string | undefined>>
@@ -67,6 +25,15 @@ function prefixTools(serverName: string, serverTools: ToolSet): ToolSet {
     Object.entries(serverTools).map(([toolName, serverTool]) => [
       `${serverName}_${toolName}`,
       wrapMcpTool(`${serverName}_${toolName}`, serverTool),
+    ])
+  );
+}
+
+function prefixDirectTools(serverName: string, serverTools: ToolSet): ToolSet {
+  return Object.fromEntries(
+    Object.entries(serverTools).map(([toolName, serverTool]) => [
+      `${serverName}_${toolName}`,
+      serverTool,
     ])
   );
 }
@@ -109,7 +76,13 @@ export function makeMcpToolsResilient(serverName: string, serverTools: ToolSet):
 async function connectServer(
   serverName: string,
   server: McpConfig['servers'][string]
-): Promise<{ readonly client: McpClient; readonly tools: ToolSet }> {
+): Promise<{
+  readonly client: McpClient;
+  readonly tools: ToolSet;
+  readonly directTools: ToolSet;
+}> {
+  if (server.type === 'sse') return connectSseServer(serverName, server);
+
   const transport = new Experimental_StdioMCPTransport({
     command: server.command,
     args: server.args,
@@ -122,16 +95,54 @@ async function connectServer(
   });
   const client = await experimental_createMCPClient({ name: `adhd-healing-${serverName}`, transport });
   const serverTools = await client.tools();
-  return { client, tools: prefixTools(serverName, serverTools) };
+  return buildServerConnection(serverName, client, serverTools, server.exposeToModel);
+}
+
+async function connectSseServer(
+  serverName: string,
+  server: Extract<McpConfig['servers'][string], { type: 'sse' }>
+): Promise<{
+  readonly client: McpClient;
+  readonly tools: ToolSet;
+  readonly directTools: ToolSet;
+}> {
+  const client = await experimental_createMCPClient({
+    name: `adhd-healing-${serverName}`,
+    transport: {
+      type: 'sse',
+      url: server.url,
+      headers: resolveMcpEnvironment(server.headers, process.env),
+    },
+  });
+  const serverTools = await client.tools();
+  return buildServerConnection(serverName, client, serverTools, server.exposeToModel);
+}
+
+function buildServerConnection(
+  serverName: string,
+  client: McpClient,
+  serverTools: ToolSet,
+  exposeToModel: boolean
+): {
+  readonly client: McpClient;
+  readonly tools: ToolSet;
+  readonly directTools: ToolSet;
+} {
+  return {
+    client,
+    tools: exposeToModel ? prefixTools(serverName, serverTools) : {},
+    directTools: prefixDirectTools(serverName, serverTools),
+  };
 }
 
 export async function initializeMcpServers(configPath: string): Promise<void> {
-  const config = parseMcpConfig(JSON.parse(await readFile(configPath, 'utf8')));
+  const config = await loadMcpConfig(configPath);
   const connections = await Promise.all(
     Object.entries(config.servers).map(([serverName, server]) => connectServer(serverName, server))
   );
   clients = connections.map(connection => connection.client);
   tools = Object.assign({}, ...connections.map(connection => connection.tools));
+  directTools = Object.assign({}, ...connections.map(connection => connection.directTools));
   console.log(`[mcp] Loaded ${Object.keys(tools).length} tools from ${connections.length} server(s).`);
 }
 
@@ -139,8 +150,48 @@ export function getMcpTools(): ToolSet {
   return tools;
 }
 
+function hasErrorFlag(result: object): boolean {
+  return 'isError' in result && result.isError === true;
+}
+
+function hasFailureStatus(result: object): boolean {
+  return 'ok' in result && result.ok === false;
+}
+
+function isObjectResult(result: unknown): result is object {
+  return typeof result === 'object' && result !== null;
+}
+
+function isFailedToolResult(result: unknown): boolean {
+  if (!isObjectResult(result)) return false;
+  return hasErrorFlag(result) || hasFailureStatus(result);
+}
+
+function getToolExecutor(toolName: string): NonNullable<ToolSet[string]['execute']> {
+  const execute = directTools[toolName]?.execute;
+  if (!execute) throw new Error(`MCP tool is unavailable: ${toolName}`);
+  return execute;
+}
+
+function assertSuccessfulToolResult(toolName: string, result: unknown): void {
+  if (isFailedToolResult(result)) throw new Error(`MCP tool failed: ${toolName}`);
+}
+
+export async function executeMcpTool(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const result = await getToolExecutor(toolName)(args, {
+    toolCallId: `direct-${crypto.randomUUID()}`,
+    messages: [],
+  });
+  assertSuccessfulToolResult(toolName, result);
+  return result;
+}
+
 export async function closeMcpServers(): Promise<void> {
   await Promise.allSettled(clients.map(client => client.close()));
   clients = [];
   tools = {};
+  directTools = {};
 }

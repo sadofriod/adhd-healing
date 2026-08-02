@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { ConversationTimeline } from './components/ConversationTimeline';
 import { CurrentPromptCard } from './components/CurrentPromptCard';
 import { FinalMarkdownPanel } from './components/FinalMarkdownPanel';
+import { LlmProgressPanel } from './components/LlmProgressPanel';
 import { TextComposer } from './components/TextComposer';
 import { useDistillSession } from './hooks/useDistillSession';
 
@@ -22,6 +23,7 @@ export function App(): JSX.Element {
     conversation,
     errorMessage,
     isSubmitting,
+    progressEntries,
     resetSession,
     submitText,
   } = useDistillSession();
@@ -47,6 +49,8 @@ export function App(): JSX.Element {
             isBusy={isSubmitting}
             isComplete={isComplete}
           />
+
+          <LlmProgressPanel entries={progressEntries} isActive={isSubmitting} />
 
           <p className={getErrorBannerClassName(errorMessage)}>{errorMessage ?? ''}</p>
 

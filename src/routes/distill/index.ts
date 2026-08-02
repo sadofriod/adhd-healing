@@ -1,5 +1,24 @@
+import type {
+  DistillApiResponse,
+  DistillRequest,
+  DistillStreamEvent,
+  LlmProgressReporter,
+} from '../../types';
 import { validateDistillRequest, ValidationError } from './validate';
 import { processDistill } from './process';
+
+const HEARTBEAT_INTERVAL_MS = 5_000;
+
+type DistillProcessor = (
+  reqData: DistillRequest,
+  reportProgress: LlmProgressReporter
+) => Promise<DistillApiResponse>;
+
+type StreamWriter = {
+  readonly cancel: () => void;
+  readonly close: () => void;
+  readonly writeEvent: (event: DistillStreamEvent) => void;
+};
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -24,6 +43,92 @@ function getHandledErrorResponse(error: unknown): Response | null {
   return null;
 }
 
+function createStreamWriter(
+  controller: ReadableStreamDefaultController<string>,
+  heartbeatIntervalMs: number
+): StreamWriter {
+  let isOpen = true;
+  const writeChunk = (chunk: string): void => {
+    if (!isOpen) return;
+    controller.enqueue(chunk);
+  };
+  const heartbeat = setInterval(() => writeChunk('\n'), heartbeatIntervalMs);
+  const stop = (): void => {
+    if (!isOpen) return;
+    isOpen = false;
+    clearInterval(heartbeat);
+  };
+  return {
+    cancel: stop,
+    close: () => {
+      if (!isOpen) return;
+      stop();
+      controller.close();
+    },
+    writeEvent: event => writeChunk(`${JSON.stringify(event)}\n`),
+  };
+}
+
+async function streamDistill(
+  reqData: DistillRequest,
+  writer: StreamWriter,
+  requestId: string,
+  startedAt: number,
+  processor: DistillProcessor
+): Promise<void> {
+  const reportProgress: LlmProgressReporter = writer.writeEvent;
+  try {
+    const result = await processor(reqData, reportProgress);
+    writer.writeEvent({ type: 'result', result });
+    console.info(`[distill:${requestId}] Completed in ${Date.now() - startedAt}ms`, {
+      status: result.status,
+    });
+  } catch (error) {
+    console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
+    writer.writeEvent({ type: 'error', error: getErrorMessage(error) });
+  } finally {
+    writer.close();
+  }
+}
+
+export function createStreamResponse(
+  reqData: DistillRequest,
+  requestId: string,
+  startedAt: number,
+  processor: DistillProcessor,
+  heartbeatIntervalMs: number
+): Response {
+  let cancelStream = (): void => undefined;
+  const stream = new ReadableStream<string>({
+    start(controller) {
+      const writer = createStreamWriter(controller, heartbeatIntervalMs);
+      cancelStream = writer.cancel;
+      void streamDistill(reqData, writer, requestId, startedAt, processor);
+    },
+    cancel: () => cancelStream(),
+  }).pipeThrough(new TextEncoderStream());
+  return new Response(stream, {
+    headers: {
+      'Cache-Control': 'no-cache',
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+    },
+  });
+}
+
+function createProductionStreamResponse(
+  reqData: DistillRequest,
+  requestId: string,
+  startedAt: number
+): Response {
+  return createStreamResponse(
+    reqData,
+    requestId,
+    startedAt,
+    processDistill,
+    HEARTBEAT_INTERVAL_MS
+  );
+}
+
 export async function handleDistill(req: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
@@ -32,21 +137,14 @@ export async function handleDistill(req: Request): Promise<Response> {
 
   try {
     const reqData = await validateDistillRequest(req);
-    const result = await processDistill(reqData);
-
-    console.info(`[distill:${requestId}] Completed in ${Date.now() - startedAt}ms`, {
-      status: result.status,
-    });
-
-    return jsonResponse(result);
+    return createProductionStreamResponse(reqData, requestId, startedAt);
   } catch (error) {
     const handledResponse = getHandledErrorResponse(error);
     if (handledResponse) {
       console.warn(`[distill:${requestId}] Validation error: ${getErrorMessage(error)}`);
       return handledResponse;
     }
-
-    console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
+    console.error(`[distill:${requestId}] Request setup error`, error);
     return errorResponse(500, getErrorMessage(error));
   }
 }

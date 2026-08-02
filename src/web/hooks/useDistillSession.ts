@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import type { DistillApiResponse } from '../../types';
-import type { ConversationState, TimelineEntry } from '../types';
+import type { DistillApiResponse, LlmProgressDecision } from '../../types';
+import { readDistillStream } from '../distill-stream';
+import type { ConversationState, ProgressEntry, TimelineEntry } from '../types';
 
 type DistillSessionState = {
   readonly conversation: ConversationState;
   readonly errorMessage: string | null;
   readonly isSubmitting: boolean;
+  readonly progressEntries: readonly ProgressEntry[];
   readonly resetSession: () => void;
   readonly submitText: (text: string) => Promise<void>;
 };
@@ -33,35 +35,17 @@ function getUserTurnIndex(entries: readonly TimelineEntry[]): number {
   return entries.filter(e => e.role === 'user').length + 1;
 }
 
-function isPlainObject(payload: unknown): payload is Record<string, unknown> {
-  return Boolean(payload) && typeof payload === 'object';
-}
-
-function toPayloadRecord(payload: unknown): Record<string, unknown> | null {
-  if (!isPlainObject(payload) || Array.isArray(payload)) return null;
-  return payload;
-}
-
-function extractErrorMessage(payload: unknown): string {
-  const record = toPayloadRecord(payload);
-  if (!record) return '请求失败，请检查服务端日志。';
-  if (typeof record.error === 'string') return record.error;
-  return '请求失败，请检查服务端日志。';
-}
-
-async function parseResponse(response: Response): Promise<DistillApiResponse> {
-  const payload = await response.json().catch(() => null) as unknown;
-  if (response.ok) return payload as DistillApiResponse;
-  throw new Error(extractErrorMessage(payload));
-}
-
-async function fetchDistill(text: string, reset: boolean): Promise<DistillApiResponse> {
+async function fetchDistill(
+  text: string,
+  reset: boolean,
+  onProgress: (progress: LlmProgressDecision) => void
+): Promise<DistillApiResponse> {
   const response = await fetch('/distill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, reset }),
   });
-  return parseResponse(response);
+  return readDistillStream(response, onProgress);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -74,6 +58,7 @@ export function useDistillSession(): DistillSessionState {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingReset, setPendingReset] = useState(false);
+  const [progressEntries, setProgressEntries] = useState<readonly ProgressEntry[]>([]);
 
   async function submitText(text: string): Promise<void> {
     const turnIndex = getUserTurnIndex(conversation.entries);
@@ -83,9 +68,20 @@ export function useDistillSession(): DistillSessionState {
     setIsSubmitting(true);
     setErrorMessage(null);
     setPendingReset(false);
+    setProgressEntries([]);
 
     try {
-      const result = await fetchDistill(text, isReset);
+      const result = await fetchDistill(text, isReset, progress => {
+        setProgressEntries(current => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            phase: progress.phase,
+            message: progress.message,
+            details: progress.details,
+          },
+        ]);
+      });
       const isComplete = result.status === 'FINISH';
       const nextPrompt = isComplete ? COMPLETED_PROMPT : result.text;
       const assistantEntry = createTimelineEntry('assistant', result.text, turnIndex);
@@ -106,12 +102,14 @@ export function useDistillSession(): DistillSessionState {
     setConversation(createInitialConversation());
     setErrorMessage(null);
     setPendingReset(true);
+    setProgressEntries([]);
   }
 
   return {
     conversation,
     errorMessage,
     isSubmitting,
+    progressEntries,
     resetSession,
     submitText,
   };

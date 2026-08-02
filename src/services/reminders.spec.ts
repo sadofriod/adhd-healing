@@ -1,27 +1,24 @@
 import { describe, expect, it } from 'bun:test';
-import { buildReminderScript } from './reminders';
+import { buildReminderScript, buildReminderTitle } from './reminders';
 
 describe('buildReminderScript', () => {
-  it('writes structured content to matching Reminders fields', () => {
-    const script = buildReminderScript({
-      title: '完成第一步',
-      notes: '执行步骤\n1. 启动服务',
-      url: 'https://bun.sh/docs',
+  it('builds a timestamped title with an Obsidian wiki-link', () => {
+    const title = buildReminderTitle({
+      milestoneTitle: '完成第一步',
+      obsidianTitle: '本地向量网关设计',
+      now: new Date('2026-08-01T07:24:00.000Z'),
     });
 
-    expect(script).toContain('name: "完成第一步"');
-    expect(script).toContain('body: "执行步骤\\n1. 启动服务\\n\\n');
-    expect(script).toContain('参考链接\\nhttps://bun.sh/docs"');
-    expect(script).toContain('flagged: true');
-    expect(script).not.toContain('url:');
+    expect(title).toContain('完成第一步');
+    expect(title).toContain('[[本地向量网关设计]]');
+    expect(title).toMatch(/⚡️ \[\d{2}:\d{2}\]/);
   });
 
-  it('does not add a link section when markdown has no web link', () => {
-    const script = buildReminderScript({
-      title: '完成第一步',
-      notes: '启动服务',
-    });
+  it('writes only the reminder name', () => {
+    const script = buildReminderScript('⚡️ [15:24] 完成第一步 -> 见 Obsidian [[设计]]');
 
-    expect(script).not.toContain('参考链接');
+    expect(script).toContain('name: "⚡️ [15:24] 完成第一步 -> 见 Obsidian [[设计]]"');
+    expect(script).not.toContain('body:');
+    expect(script).not.toContain('flagged:');
   });
 });
