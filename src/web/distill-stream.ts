@@ -1,11 +1,12 @@
 import type {
   DistillApiResponse,
   DistillStreamEvent,
-  LlmProgressDecision,
+  LlmActivityEvent,
   LlmProgressPhase,
+  LlmTokenUsage,
 } from '../types';
 
-type ProgressHandler = (progress: LlmProgressDecision) => void;
+type ActivityHandler = (event: LlmActivityEvent) => void;
 
 type StreamState = {
   result: DistillApiResponse | null;
@@ -27,14 +28,40 @@ function isProgressPhase(value: unknown): value is LlmProgressPhase {
 }
 
 function isWorkflowStatus(value: unknown): value is DistillApiResponse['status'] {
-  return value === 'CONTINUE' || value === 'FINISH';
+  return value === 'CONTINUE' || value === 'FINISH' || value === 'PAUSED';
+}
+
+function parseResultText(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('服务端返回了无效的结果内容。');
+  return value;
 }
 
 function parseResult(value: Record<string, unknown>): DistillApiResponse {
   const status = value.status;
   if (!isWorkflowStatus(status)) throw new Error('服务端返回了无效的结果状态。');
-  if (typeof value.text !== 'string') throw new Error('服务端返回了无效的结果内容。');
-  return { status, text: value.text };
+  const text = parseResultText(value.text);
+  if (status !== 'FINISH') return { status, text };
+  return {
+    status,
+    text,
+    tokenUsage: parseTokenUsage(value.tokenUsage),
+  };
+}
+
+function parseTokenCount(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error('服务端返回了无效的 token 数量。');
+  }
+  return Number(value);
+}
+
+function parseTokenUsage(value: unknown): LlmTokenUsage {
+  const usage = requireRecord(value);
+  return {
+    inputTokens: parseTokenCount(usage.inputTokens),
+    outputTokens: parseTokenCount(usage.outputTokens),
+    totalTokens: parseTokenCount(usage.totalTokens),
+  };
 }
 
 function parseOptionalDetails(value: unknown): string | undefined {
@@ -43,7 +70,13 @@ function parseOptionalDetails(value: unknown): string | undefined {
   return value;
 }
 
-function parseProgressEvent(value: Record<string, unknown>): LlmProgressDecision {
+function parseOptionalOperationId(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error('服务端返回了无效的调用 ID。');
+  return value;
+}
+
+function parseProgressEvent(value: Record<string, unknown>): DistillStreamEvent {
   if (!isProgressPhase(value.phase)) throw new Error('服务端返回了无效的进度阶段。');
   if (typeof value.message !== 'string') throw new Error('服务端返回了无效的进度内容。');
   return {
@@ -51,6 +84,20 @@ function parseProgressEvent(value: Record<string, unknown>): LlmProgressDecision
     phase: value.phase,
     message: value.message,
     details: parseOptionalDetails(value.details),
+    operationId: parseOptionalOperationId(value.operationId),
+    input: value.input,
+    output: value.output,
+  };
+}
+
+function parseUsageEvent(value: Record<string, unknown>): DistillStreamEvent {
+  if (typeof value.source !== 'string') throw new Error('服务端返回了无效的 token 来源。');
+  if (typeof value.estimatedCostUsd !== 'number') throw new Error('服务端返回了无效的 token 价格。');
+  return {
+    type: 'usage',
+    source: value.source,
+    usage: parseTokenUsage(value.usage),
+    estimatedCostUsd: value.estimatedCostUsd,
   };
 }
 
@@ -65,6 +112,7 @@ function parseErrorEvent(value: Record<string, unknown>): DistillStreamEvent {
 
 const EVENT_PARSERS: Readonly<Record<string, EventParser>> = {
   progress: parseProgressEvent,
+  usage: parseUsageEvent,
   result: parseResultEvent,
   error: parseErrorEvent,
 };
@@ -83,15 +131,19 @@ function parseStreamEvent(line: string): DistillStreamEvent {
 
 function handleEvent(
   event: DistillStreamEvent,
-  onProgress: ProgressHandler,
+  onActivity: ActivityHandler,
   state: StreamState
 ): void {
-  if (event.type === 'progress') {
-    onProgress(event);
+  if (isActivityEvent(event)) {
+    onActivity(event);
     return;
   }
   if (event.type === 'error') throw new Error(event.error);
   state.result = event.result;
+}
+
+function isActivityEvent(event: DistillStreamEvent): event is LlmActivityEvent {
+  return event.type === 'progress' || event.type === 'usage';
 }
 
 function popRemainder(lines: string[]): string {
@@ -102,14 +154,14 @@ function popRemainder(lines: string[]): string {
 
 function consumeCompleteLines(
   buffer: string,
-  onProgress: ProgressHandler,
+  onActivity: ActivityHandler,
   state: StreamState
 ): string {
   const lines = buffer.split('\n');
   const remainder = popRemainder(lines);
   for (const line of lines) {
     if (!line.trim()) continue;
-    handleEvent(parseStreamEvent(line), onProgress, state);
+    handleEvent(parseStreamEvent(line), onActivity, state);
   }
   return remainder;
 }
@@ -122,37 +174,37 @@ async function getResponseError(response: Response): Promise<string> {
 
 export async function readDistillStream(
   response: Response,
-  onProgress: ProgressHandler
+  onActivity: ActivityHandler
 ): Promise<DistillApiResponse> {
   if (!response.ok) throw new Error(await getResponseError(response));
   if (!response.body) throw new Error('浏览器无法读取服务端进度流。');
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   const state: StreamState = { result: null };
-  const remainder = await readStreamChunks(reader, onProgress, state);
-  return finishStream(remainder, onProgress, state);
+  const remainder = await readStreamChunks(reader, onActivity, state);
+  return finishStream(remainder, onActivity, state);
 }
 
 async function readStreamChunks(
   reader: ReadableStreamDefaultReader<string>,
-  onProgress: ProgressHandler,
+  onActivity: ActivityHandler,
   state: StreamState
 ): Promise<string> {
   let buffer = '';
   while (true) {
     const chunk = await reader.read();
     if (chunk.done) break;
-    buffer = consumeCompleteLines(buffer + chunk.value, onProgress, state);
+    buffer = consumeCompleteLines(buffer + chunk.value, onActivity, state);
   }
   return buffer;
 }
 
 function finishStream(
   remainder: string,
-  onProgress: ProgressHandler,
+  onActivity: ActivityHandler,
   state: StreamState
 ): DistillApiResponse {
-  if (remainder.trim()) handleEvent(parseStreamEvent(remainder), onProgress, state);
+  if (remainder.trim()) handleEvent(parseStreamEvent(remainder), onActivity, state);
   if (!state.result) throw new Error('服务端进度流未返回最终结果。');
   return state.result;
 }

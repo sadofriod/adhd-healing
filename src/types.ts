@@ -1,17 +1,35 @@
-export type WorkflowStatus = 'CONTINUE' | 'FINISH';
+export type WorkflowStatus = 'CONTINUE' | 'FINISH' | 'PAUSED';
 
 export type DistillRequest = {
   readonly text: string;
   readonly reset: boolean;
+  readonly resume?: boolean;
 };
 
-export type DistillApiResponse = {
-  readonly status: WorkflowStatus;
-  readonly text: string;
+export type LlmTokenUsage = {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
 };
+
+export type DistillApiResponse =
+  | {
+      readonly status: 'CONTINUE';
+      readonly text: string;
+    }
+  | {
+      readonly status: 'PAUSED';
+      readonly text: string;
+    }
+  | {
+      readonly status: 'FINISH';
+      readonly text: string;
+      readonly tokenUsage: LlmTokenUsage;
+    };
 
 export type DistillStreamEvent =
   | LlmProgressDecision
+  | LlmUsageEvent
   | {
       readonly type: 'result';
       readonly result: DistillApiResponse;
@@ -54,9 +72,21 @@ export type LlmProgressDecision = {
   readonly phase: LlmProgressPhase;
   readonly message: string;
   readonly details?: string;
+  readonly operationId?: string;
+  readonly input?: unknown;
+  readonly output?: unknown;
 };
 
-export type LlmProgressReporter = (progress: LlmProgressDecision) => void;
+export type LlmUsageEvent = {
+  readonly type: 'usage';
+  readonly source: string;
+  readonly usage: LlmTokenUsage;
+  readonly estimatedCostUsd: number;
+};
+
+export type LlmActivityEvent = LlmProgressDecision | LlmUsageEvent;
+
+export type LlmActivityReporter = (event: LlmActivityEvent) => void;
 
 export type LlmFinalDecisionDraft = {
   readonly type: 'final';

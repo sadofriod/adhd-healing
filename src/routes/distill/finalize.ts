@@ -1,6 +1,7 @@
 import type {
   ArchiveClassification,
   DeepResearchArtifact,
+  LlmTokenUsage,
 } from '../../types';
 import {
   buildReminderTitle,
@@ -21,6 +22,7 @@ export async function runFinalizeWritePipeline(opts: {
   transcript: string;
   archive: ArchiveClassification;
   researchArtifacts: readonly DeepResearchArtifact[];
+  tokenUsage: LlmTokenUsage;
 }): Promise<FinalizeWriteResult> {
   const {
     title,
@@ -30,6 +32,7 @@ export async function runFinalizeWritePipeline(opts: {
     transcript,
     archive,
     researchArtifacts,
+    tokenUsage,
   } = opts;
 
   const bundle = await saveObsidianArtifactBundle({
@@ -44,6 +47,12 @@ export async function runFinalizeWritePipeline(opts: {
       '## 对话记录',
       '',
       transcript,
+      '',
+      '## Token 消耗',
+      '',
+      `- Input: ${tokenUsage.inputTokens}`,
+      `- Output: ${tokenUsage.outputTokens}`,
+      `- Total: ${tokenUsage.totalTokens}`,
     ].join('\n'),
     milestone,
     category: archive.category,

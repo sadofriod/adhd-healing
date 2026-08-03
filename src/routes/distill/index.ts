@@ -2,8 +2,9 @@ import type {
   DistillApiResponse,
   DistillRequest,
   DistillStreamEvent,
-  LlmProgressReporter,
+  LlmActivityReporter,
 } from '../../types';
+import { isRecoverableNetworkError } from '../../services/network-error';
 import { validateDistillRequest, ValidationError } from './validate';
 import { processDistill } from './process';
 
@@ -11,7 +12,7 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 
 type DistillProcessor = (
   reqData: DistillRequest,
-  reportProgress: LlmProgressReporter
+  reportProgress: LlmActivityReporter
 ) => Promise<DistillApiResponse>;
 
 type StreamWriter = {
@@ -76,7 +77,7 @@ async function streamDistill(
   startedAt: number,
   processor: DistillProcessor
 ): Promise<void> {
-  const reportProgress: LlmProgressReporter = writer.writeEvent;
+  const reportProgress: LlmActivityReporter = writer.writeEvent;
   try {
     const result = await processor(reqData, reportProgress);
     writer.writeEvent({ type: 'result', result });
@@ -84,8 +85,14 @@ async function streamDistill(
       status: result.status,
     });
   } catch (error) {
-    console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
-    writer.writeEvent({ type: 'error', error: getErrorMessage(error) });
+    const message = getErrorMessage(error);
+    if (isRecoverableNetworkError(error)) {
+      console.warn(`[distill:${requestId}] Paused after network failure (${Date.now() - startedAt}ms)`, error);
+      writer.writeEvent({ type: 'result', result: { status: 'PAUSED', text: message } });
+    } else {
+      console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
+      writer.writeEvent({ type: 'error', error: message });
+    }
   } finally {
     writer.close();
   }

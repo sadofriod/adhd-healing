@@ -8,6 +8,8 @@ import {
 
 type McpClient = Awaited<ReturnType<typeof experimental_createMCPClient>>;
 
+const DIRECT_MCP_TIMEOUT_MS = 30_000;
+
 let clients: readonly McpClient[] = [];
 let tools: ToolSet = {};
 let directTools: ToolSet = {};
@@ -177,14 +179,37 @@ function assertSuccessfulToolResult(toolName: string, result: unknown): void {
   if (isFailedToolResult(result)) throw new Error(`MCP tool failed: ${toolName}`);
 }
 
+export async function executeMcpOperation<Result>(
+  toolName: string,
+  operation: (abortSignal: AbortSignal) => Promise<Result>,
+  timeoutMs: number = DIRECT_MCP_TIMEOUT_MS
+): Promise<Result> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutResult = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`MCP tool timed out after ${timeoutMs}ms: ${toolName}`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeoutResult]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 export async function executeMcpTool(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const result = await getToolExecutor(toolName)(args, {
+  const execute = getToolExecutor(toolName);
+  const result = await executeMcpOperation(toolName, abortSignal => execute(args, {
     toolCallId: `direct-${crypto.randomUUID()}`,
     messages: [],
-  });
+    abortSignal,
+  }));
   assertSuccessfulToolResult(toolName, result);
   return result;
 }

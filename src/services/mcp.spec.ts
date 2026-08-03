@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { makeMcpToolsResilient } from './mcp';
+import { executeMcpOperation, makeMcpToolsResilient } from './mcp';
 import {
   parseMcpConfig,
   resolveMcpEnvironment,
@@ -74,5 +74,19 @@ describe('MCP configuration', () => {
     );
 
     expect(result).toEqual({ ok: false, error: '404 Not Found' });
+  });
+
+  test('aborts a direct MCP operation when it times out', async () => {
+    let aborted = false;
+    const operation = (signal: AbortSignal): Promise<never> => {
+      signal.addEventListener('abort', () => {
+        aborted = true;
+      });
+      return new Promise(() => undefined);
+    };
+
+    await expect(executeMcpOperation('obsidian_create-note', operation, 5))
+      .rejects.toThrow('MCP tool timed out after 5ms: obsidian_create-note');
+    expect(aborted).toBeTrue();
   });
 });

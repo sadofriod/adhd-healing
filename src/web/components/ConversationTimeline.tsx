@@ -20,6 +20,15 @@ export function ConversationTimeline(props: ConversationTimelineProps): JSX.Elem
           <span>turn {entry.turnIndex}</span>
         </div>
         <p>{entry.content}</p>
+        {entry.tokenUsage && entry.estimatedCostUsd !== undefined
+          ? (
+              <small className="timeline-usage">
+                input {entry.tokenUsage.inputTokens.toLocaleString()} · output{' '}
+                {entry.tokenUsage.outputTokens.toLocaleString()} · total{' '}
+                {entry.tokenUsage.totalTokens.toLocaleString()} tokens · 预估 ${entry.estimatedCostUsd.toFixed(6)}
+              </small>
+            )
+          : null}
       </li>
     );
   });

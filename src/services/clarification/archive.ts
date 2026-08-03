@@ -1,12 +1,17 @@
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import type { ArchiveClassification } from '../../types';
+import type {
+  ArchiveClassification,
+  LlmActivityReporter,
+} from '../../types';
 import { getLlmClient, CHAT_MODEL } from '../llm-client';
+import { reportTokenUsages } from '../token-usage';
 import { getArchiveTaxonomy } from '../vault';
 import { getArchiveSystemPrompt } from './archive-agent';
 import type { ArchiveDocumentInput } from './types';
 
 const MAX_ARCHIVE_SUMMARY_LENGTH = 160;
+const ignoreActivity: LlmActivityReporter = () => undefined;
 
 const ArchiveClassificationSchema = z.object({
   category: z.string().trim().min(1).max(40),
@@ -32,21 +37,36 @@ function buildArchivePrompt(input: ArchiveDocumentInput): string {
 }
 
 export async function classifyArchiveDocument(
-  input: ArchiveDocumentInput
+  input: ArchiveDocumentInput,
+  reportActivity: LlmActivityReporter = ignoreActivity
 ): Promise<ArchiveClassification> {
+  reportActivity({
+    type: 'progress',
+    phase: 'sub-agent',
+    message: '归档分类开始执行',
+    details: input.title,
+  });
   const client = getLlmClient();
   const taxonomy = await getArchiveTaxonomy();
-  const { object } = await generateObject({
+  const result = await generateObject({
     model: client(CHAT_MODEL),
     schema: ArchiveClassificationSchema,
     system: getArchiveSystemPrompt(taxonomy.categories, taxonomy.subcategories),
     prompt: buildArchivePrompt(input),
   });
+  reportTokenUsages('归档分类', [result.usage], reportActivity);
 
-  return {
-    category: object.category,
-    subcategory: object.subcategory,
-    summary: normalizeArchiveSummary(object.summary),
-    tags: object.tags,
+  const classification = {
+    category: result.object.category,
+    subcategory: result.object.subcategory,
+    summary: normalizeArchiveSummary(result.object.summary),
+    tags: result.object.tags,
   };
+  reportActivity({
+    type: 'progress',
+    phase: 'sub-agent',
+    message: '归档分类已完成',
+    details: `${classification.category} / ${classification.subcategory}`,
+  });
+  return classification;
 }

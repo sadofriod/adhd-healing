@@ -1,16 +1,48 @@
-import { useState } from 'react';
-import type { DistillApiResponse, LlmProgressDecision } from '../../types';
+import { useRef, useState } from 'react';
+import type {
+  DistillApiResponse,
+  LlmActivityEvent,
+  LlmUsageEvent,
+} from '../../types';
+import { isRecoverableNetworkError } from '../../services/network-error';
+import { addTokenUsage, EMPTY_TOKEN_USAGE } from '../../services/token-usage';
 import { readDistillStream } from '../distill-stream';
-import type { ConversationState, ProgressEntry, TimelineEntry } from '../types';
+import type {
+  ConversationState,
+  ExecutionStatus,
+  ProgressEntry,
+  TimelineEntry,
+} from '../types';
 
 type DistillSessionState = {
   readonly conversation: ConversationState;
   readonly errorMessage: string | null;
-  readonly isSubmitting: boolean;
+  readonly executionStatus: ExecutionStatus;
   readonly progressEntries: readonly ProgressEntry[];
   readonly resetSession: () => void;
+  readonly resumeTask: () => Promise<void>;
   readonly submitText: (text: string) => Promise<void>;
 };
+
+type PendingTask = {
+  readonly text: string;
+  readonly userEntry: TimelineEntry;
+  readonly usageEvents: LlmUsageEvent[];
+};
+
+type CompletedDistillResponse = Exclude<DistillApiResponse, { status: 'PAUSED' }>;
+
+type TaskCallbacks = {
+  readonly onActivity: (event: LlmActivityEvent) => void;
+  readonly onError: (error: unknown) => void;
+  readonly onPause: () => void;
+  readonly onSuccess: (result: CompletedDistillResponse) => void;
+};
+
+type CompletionFields = Pick<
+  ConversationState,
+  'finalText' | 'finalTokenUsage' | 'prompt'
+>;
 
 const INITIAL_PROMPT = '先把你的想法说出来。我会逐轮追问，直到变成一份可执行的结果。';
 const COMPLETED_PROMPT = '这一轮已经完成。准备好了就直接开始下一轮新的想法。';
@@ -18,9 +50,27 @@ const COMPLETED_PROMPT = '这一轮已经完成。准备好了就直接开始下
 function createTimelineEntry(
   role: 'assistant' | 'user',
   content: string,
-  turnIndex: number
+  turnIndex: number,
+  usageEvents: readonly LlmUsageEvent[] = []
 ): TimelineEntry {
-  return { id: crypto.randomUUID(), role, content, turnIndex };
+  if (usageEvents.length === 0) return { id: crypto.randomUUID(), role, content, turnIndex };
+  const tokenUsage = usageEvents.reduce(
+    (total, event) => addTokenUsage(total, event.usage),
+    EMPTY_TOKEN_USAGE
+  );
+  const estimatedCostUsd = usageEvents.reduce(
+    (total, event) => total + event.estimatedCostUsd,
+    0
+  );
+  return { id: crypto.randomUUID(), role, content, turnIndex, tokenUsage, estimatedCostUsd };
+}
+
+function createPendingTask(text: string, turnIndex: number): PendingTask {
+  return {
+    text,
+    userEntry: createTimelineEntry('user', text, turnIndex),
+    usageEvents: [],
+  };
 }
 
 function createInitialConversation(): ConversationState {
@@ -28,6 +78,7 @@ function createInitialConversation(): ConversationState {
     prompt: INITIAL_PROMPT,
     entries: [createTimelineEntry('assistant', INITIAL_PROMPT, 0)],
     finalText: null,
+    finalTokenUsage: null,
   };
 }
 
@@ -38,14 +89,15 @@ function getUserTurnIndex(entries: readonly TimelineEntry[]): number {
 async function fetchDistill(
   text: string,
   reset: boolean,
-  onProgress: (progress: LlmProgressDecision) => void
+  resume: boolean,
+  onActivity: (event: LlmActivityEvent) => void
 ): Promise<DistillApiResponse> {
   const response = await fetch('/distill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, reset }),
+    body: JSON.stringify({ text, reset, resume }),
   });
-  return readDistillStream(response, onProgress);
+  return readDistillStream(response, onActivity);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -53,49 +105,129 @@ function getErrorMessage(error: unknown): string {
   return '请求失败，请稍后重试。';
 }
 
+function handleTaskError(error: unknown, callbacks: TaskCallbacks): void {
+  if (isRecoverableNetworkError(error)) {
+    callbacks.onPause();
+    return;
+  }
+  callbacks.onError(error);
+}
+
+async function runTask(
+  task: PendingTask,
+  reset: boolean,
+  resume: boolean,
+  callbacks: TaskCallbacks
+): Promise<void> {
+  try {
+    const result = await fetchDistill(task.text, reset, resume, callbacks.onActivity);
+    if (result.status === 'PAUSED') {
+      callbacks.onPause();
+      return;
+    }
+    callbacks.onSuccess(result);
+  } catch (error) {
+    handleTaskError(error, callbacks);
+  }
+}
+
+function pauseConversation(
+  current: ConversationState,
+  task: PendingTask
+): ConversationState {
+  return {
+    ...current,
+    prompt: '网络连接中断，任务已暂停。连接恢复后可继续执行。',
+    entries: appendUserEntry(current.entries, task.userEntry),
+  };
+}
+
+function completeConversation(
+  current: ConversationState,
+  task: PendingTask,
+  result: CompletedDistillResponse
+): ConversationState {
+  const assistantEntry = createTimelineEntry(
+    'assistant', result.text, task.userEntry.turnIndex, task.usageEvents
+  );
+  return {
+    ...getCompletionFields(result),
+    entries: appendTaskEntries(current.entries, task.userEntry, assistantEntry),
+  };
+}
+
+function getCompletionFields(result: CompletedDistillResponse): CompletionFields {
+  if (result.status === 'FINISH') {
+    return {
+      prompt: COMPLETED_PROMPT,
+      finalText: result.text,
+      finalTokenUsage: result.tokenUsage,
+    };
+  }
+  return { prompt: result.text, finalText: null, finalTokenUsage: null };
+}
+
+function getProgressForExecution(
+  current: readonly ProgressEntry[],
+  resume: boolean
+): readonly ProgressEntry[] {
+  return resume ? current : [];
+}
+
 export function useDistillSession(): DistillSessionState {
   const [conversation, setConversation] = useState<ConversationState>(createInitialConversation);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [executionStatus, setExecutionStatus] = useState<ExecutionStatus>('idle');
   const [pendingReset, setPendingReset] = useState(false);
   const [progressEntries, setProgressEntries] = useState<readonly ProgressEntry[]>([]);
+  const pendingTaskRef = useRef<PendingTask | null>(null);
+
+  async function executeTask(task: PendingTask, reset: boolean, resume: boolean): Promise<void> {
+    setExecutionStatus('running');
+    setErrorMessage(null);
+    setPendingReset(false);
+    setProgressEntries(current => getProgressForExecution(current, resume));
+    await runTask(task, reset, resume, {
+      onActivity: event => {
+        if (event.type === 'usage') task.usageEvents.push(event);
+        setProgressEntries(current => [
+          ...current,
+          { id: crypto.randomUUID(), ...event },
+        ]);
+      },
+      onError: error => failTask(error),
+      onPause: () => pauseTask(task),
+      onSuccess: result => completeTask(task, result),
+    });
+  }
+
+  function pauseTask(task: PendingTask): void {
+    pendingTaskRef.current = task;
+    setConversation(current => pauseConversation(current, task));
+    setExecutionStatus('paused');
+  }
+
+  function completeTask(task: PendingTask, result: CompletedDistillResponse): void {
+    setConversation(current => completeConversation(current, task, result));
+    pendingTaskRef.current = null;
+    setExecutionStatus('idle');
+  }
+
+  function failTask(error: unknown): void {
+    setErrorMessage(getErrorMessage(error));
+    setExecutionStatus('idle');
+  }
 
   async function submitText(text: string): Promise<void> {
     const turnIndex = getUserTurnIndex(conversation.entries);
-    const userEntry = createTimelineEntry('user', text, turnIndex);
-    const isReset = pendingReset;
+    const task = createPendingTask(text, turnIndex);
+    await executeTask(task, pendingReset, false);
+  }
 
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setPendingReset(false);
-    setProgressEntries([]);
-
-    try {
-      const result = await fetchDistill(text, isReset, progress => {
-        setProgressEntries(current => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            phase: progress.phase,
-            message: progress.message,
-            details: progress.details,
-          },
-        ]);
-      });
-      const isComplete = result.status === 'FINISH';
-      const nextPrompt = isComplete ? COMPLETED_PROMPT : result.text;
-      const assistantEntry = createTimelineEntry('assistant', result.text, turnIndex);
-
-      setConversation(current => ({
-        prompt: nextPrompt,
-        entries: [...current.entries, userEntry, assistantEntry],
-        finalText: isComplete ? result.text : null,
-      }));
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+  async function resumeTask(): Promise<void> {
+    const task = pendingTaskRef.current;
+    if (!task) return;
+    await executeTask(task, false, true);
   }
 
   function resetSession(): void {
@@ -103,14 +235,33 @@ export function useDistillSession(): DistillSessionState {
     setErrorMessage(null);
     setPendingReset(true);
     setProgressEntries([]);
+    pendingTaskRef.current = null;
+    setExecutionStatus('idle');
   }
 
   return {
     conversation,
     errorMessage,
-    isSubmitting,
+    executionStatus,
     progressEntries,
     resetSession,
+    resumeTask,
     submitText,
   };
+}
+
+function appendUserEntry(
+  entries: readonly TimelineEntry[],
+  userEntry: TimelineEntry
+): readonly TimelineEntry[] {
+  if (entries.some(entry => entry.id === userEntry.id)) return entries;
+  return [...entries, userEntry];
+}
+
+function appendTaskEntries(
+  entries: readonly TimelineEntry[],
+  userEntry: TimelineEntry,
+  assistantEntry: TimelineEntry
+): readonly TimelineEntry[] {
+  return [...appendUserEntry(entries, userEntry), assistantEntry];
 }

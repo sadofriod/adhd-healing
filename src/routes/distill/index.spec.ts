@@ -54,4 +54,24 @@ describe('distill response stream lifecycle', () => {
 
     expect(processorCompleted).toBeTrue();
   });
+
+  test('pauses a task when the processor encounters a network failure', async () => {
+    const response = createStreamResponse(
+      REQUEST,
+      'network-test',
+      Date.now(),
+      async () => {
+        throw new TypeError('fetch failed');
+      },
+      5
+    );
+
+    const body = await response.text();
+
+    expect(body).toContain(JSON.stringify({
+      type: 'result',
+      result: { status: 'PAUSED', text: 'fetch failed' },
+    }));
+    expect(body).not.toContain('"type":"error"');
+  });
 });

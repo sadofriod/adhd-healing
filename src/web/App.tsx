@@ -18,16 +18,23 @@ function getResetButtonClassName(isComplete: boolean): string {
   return isComplete ? 'secondary-button reset-button' : 'secondary-button reset-button is-hidden';
 }
 
+function getResumeButtonClassName(isPaused: boolean): string {
+  return isPaused ? 'primary-button resume-button' : 'primary-button resume-button is-hidden';
+}
+
 export function App(): JSX.Element {
   const {
     conversation,
     errorMessage,
-    isSubmitting,
+    executionStatus,
     progressEntries,
     resetSession,
+    resumeTask,
     submitText,
   } = useDistillSession();
   const isComplete = conversation.finalText !== null;
+  const isSubmitting = executionStatus === 'running';
+  const isPaused = executionStatus === 'paused';
   const isComposerDisabled = getComposerDisabled(isSubmitting, isComplete);
 
   return (
@@ -46,19 +53,28 @@ export function App(): JSX.Element {
         <section className="left-column">
           <CurrentPromptCard
             prompt={conversation.prompt}
-            isBusy={isSubmitting}
+            executionStatus={executionStatus}
             isComplete={isComplete}
           />
 
-          <LlmProgressPanel entries={progressEntries} isActive={isSubmitting} />
+          <LlmProgressPanel entries={progressEntries} status={executionStatus} />
 
           <p className={getErrorBannerClassName(errorMessage)}>{errorMessage ?? ''}</p>
 
           <TextComposer
-            disabled={isComposerDisabled}
+            disabled={isComposerDisabled || isPaused}
             prompt={conversation.prompt}
             onSubmit={submitText}
           />
+
+          <button
+            className={getResumeButtonClassName(isPaused)}
+            disabled={!isPaused}
+            onClick={resumeTask}
+            type="button"
+          >
+            继续执行
+          </button>
 
           <button
             className={getResetButtonClassName(isComplete)}
@@ -72,7 +88,10 @@ export function App(): JSX.Element {
 
         <aside className="right-column">
           <ConversationTimeline entries={conversation.entries} />
-          <FinalMarkdownPanel finalText={conversation.finalText} />
+          <FinalMarkdownPanel
+            finalText={conversation.finalText}
+            tokenUsage={conversation.finalTokenUsage}
+          />
         </aside>
       </main>
     </div>

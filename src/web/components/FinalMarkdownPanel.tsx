@@ -1,7 +1,9 @@
 import type { JSX } from 'react';
+import type { LlmTokenUsage } from '../../types';
 
 type FinalMarkdownPanelProps = {
   readonly finalText: string | null;
+  readonly tokenUsage: LlmTokenUsage | null;
 };
 
 function getCardClassName(hasResult: boolean): string {
@@ -14,8 +16,21 @@ function getStatusLabel(hasResult: boolean): string {
   return 'waiting';
 }
 
-function ResultContent({ finalText }: { finalText: string }): JSX.Element {
-  return <article className="markdown-output">{finalText}</article>;
+function ResultContent(props: {
+  readonly finalText: string;
+  readonly tokenUsage: LlmTokenUsage;
+}): JSX.Element {
+  return (
+    <>
+      <div className="final-token-summary">
+        <strong>本轮总消耗</strong>
+        <span>input {props.tokenUsage.inputTokens.toLocaleString()}</span>
+        <span>output {props.tokenUsage.outputTokens.toLocaleString()}</span>
+        <span>total {props.tokenUsage.totalTokens.toLocaleString()} tokens</span>
+      </div>
+      <article className="markdown-output">{props.finalText}</article>
+    </>
+  );
 }
 
 function EmptyContent(): JSX.Element {
@@ -27,7 +42,7 @@ function EmptyContent(): JSX.Element {
 }
 
 export function FinalMarkdownPanel(props: FinalMarkdownPanelProps): JSX.Element {
-  const hasResult = props.finalText !== null;
+  const hasResult = props.finalText !== null && props.tokenUsage !== null;
 
   return (
     <section className={getCardClassName(hasResult)}>
@@ -38,7 +53,9 @@ export function FinalMarkdownPanel(props: FinalMarkdownPanelProps): JSX.Element 
         </div>
         <span className="status-pill">{getStatusLabel(hasResult)}</span>
       </div>
-      {hasResult ? <ResultContent finalText={props.finalText as string} /> : <EmptyContent />}
+      {hasResult
+        ? <ResultContent finalText={props.finalText} tokenUsage={props.tokenUsage} />
+        : <EmptyContent />}
     </section>
   );
 }

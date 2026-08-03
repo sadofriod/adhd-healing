@@ -82,11 +82,17 @@ describe('Obsidian artifact bundles', () => {
 
   it('writes every prepared note through MCP', async () => {
     const calls: Array<{ path: unknown; content: unknown }> = [];
+    let activeWrites = 0;
+    let maxActiveWrites = 0;
     const execute = async (
       _toolName: string,
       args: Record<string, unknown>
     ): Promise<unknown> => {
+      activeWrites += 1;
+      maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
       calls.push({ path: args.path, content: args.content });
+      await new Promise(resolve => setTimeout(resolve, 1));
+      activeWrites -= 1;
       return { ok: true };
     };
 
@@ -97,5 +103,6 @@ describe('Obsidian artifact bundles', () => {
       bundle.mainNote.path,
       ...bundle.researchNotes.map(note => note.path),
     ]);
+    expect(maxActiveWrites).toBe(1);
   });
 });

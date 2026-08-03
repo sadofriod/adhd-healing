@@ -11,6 +11,7 @@ export class ValidationError extends Error {
 const distillRequestSchema = z.object({
   text: z.string().trim().min(1, 'text must be a non-empty string'),
   reset: z.boolean().default(false),
+  resume: z.boolean().default(false),
 });
 
 function getFirstIssueMessage(error: z.ZodError): string {

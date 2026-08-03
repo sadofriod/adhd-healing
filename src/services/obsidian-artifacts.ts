@@ -132,10 +132,14 @@ export async function saveObsidianArtifactBundle(
 ): Promise<ObsidianArtifactBundle> {
   const bundle = buildObsidianArtifactBundle(input);
   const notes = [bundle.mainNote, ...bundle.researchNotes];
-  await Promise.all(notes.map(note => executeTool(config.obsidianMcpWriteTool, {
-    path: note.path,
-    content: note.content,
-  })));
+  for (const note of notes) {
+    console.log(`[obsidian] Saving artifact: ${note.path}`);
+    await executeTool(config.obsidianMcpWriteTool, {
+      path: note.path,
+      content: note.content,
+    });
+    console.log(`[obsidian] Saved artifact: ${note.path}`);
+  }
   console.log(`[obsidian] Saved artifact bundle: ${bundle.directoryPath}`);
   return bundle;
 }

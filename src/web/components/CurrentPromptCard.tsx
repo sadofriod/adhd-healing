@@ -1,19 +1,25 @@
 import type { JSX } from 'react';
+import type { ExecutionStatus } from '../types';
 
 type CurrentPromptCardProps = {
   readonly prompt: string;
-  readonly isBusy: boolean;
+  readonly executionStatus: ExecutionStatus;
   readonly isComplete: boolean;
 };
 
-function getStatusLabel(isBusy: boolean, isComplete: boolean): string {
-  if (isBusy) return '处理中';
+const STATUS_LABELS: Readonly<Record<ExecutionStatus, string>> = {
+  idle: '进行中',
+  running: '处理中',
+  paused: '已暂停',
+};
+
+function getStatusLabel(executionStatus: ExecutionStatus, isComplete: boolean): string {
   if (isComplete) return '已完成';
-  return '进行中';
+  return STATUS_LABELS[executionStatus];
 }
 
 export function CurrentPromptCard(props: CurrentPromptCardProps): JSX.Element {
-  const statusLabel = getStatusLabel(props.isBusy, props.isComplete);
+  const statusLabel = getStatusLabel(props.executionStatus, props.isComplete);
 
   return (
     <section className="panel-surface prompt-card">

@@ -222,6 +222,35 @@ button {
   white-space: pre-wrap;
 }
 
+.progress-exchange {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.progress-exchange strong,
+.progress-operation-id {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.progress-exchange pre {
+  background: rgba(36, 65, 62, 0.06);
+  border-left: 2px solid rgba(36, 65, 62, 0.2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-main);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.74rem;
+  margin: 0;
+  max-height: 240px;
+  max-width: 100%;
+  overflow: auto;
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .progress-phase {
   border-radius: 999px;
   flex: 0 0 auto;
@@ -245,6 +274,27 @@ button {
 .progress-phase-sub-agent {
   background: rgba(183, 105, 76, 0.14);
   color: var(--accent-clay);
+}
+
+.progress-phase-token {
+  background: rgba(183, 105, 76, 0.14);
+  color: var(--accent-clay);
+}
+
+.token-usage-details {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.timeline-usage {
+  border-top: 1px solid rgba(36, 65, 62, 0.12);
+  color: var(--accent-clay);
+  display: block;
+  font-size: 0.76rem;
+  margin-top: 10px;
+  padding-top: 8px;
 }
 
 .progress-placeholder {
@@ -432,6 +482,10 @@ button {
   align-self: flex-start;
 }
 
+.resume-button {
+  align-self: flex-start;
+}
+
 .timeline-list {
   display: flex;
   flex-direction: column;
@@ -475,6 +529,22 @@ button {
 
 .result-card-empty {
   justify-content: center;
+}
+
+.final-token-summary {
+  align-items: center;
+  background: rgba(86, 117, 96, 0.1);
+  border: 1px solid rgba(86, 117, 96, 0.16);
+  border-radius: var(--radius-md);
+  color: var(--accent-ink);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 14px 16px;
+}
+
+.final-token-summary strong {
+  margin-right: auto;
 }
 
 .markdown-output {
