@@ -8,7 +8,8 @@ import type {
 import { getLlmClient, CHAT_MODEL } from '../llm-client';
 import { getMcpTools } from '../mcp';
 import { reportTokenUsages } from '../token-usage';
-import { getSessionResearchMemory, rememberSessionResearch } from '../session';
+import { getSessionResearchMemory } from '../session';
+import { rememberCompressedSessionResearch } from '../session-memory';
 import { createBrowserSearchTool } from './browser-search-tool';
 import { buildMemoryInstruction } from './prompts';
 import { getResearchSystemPrompt } from './research-agent';
@@ -121,15 +122,15 @@ async function generateResearchText(
     },
     toolChoice: 'auto',
     maxSteps: 8,
-    onStepFinish: step => {
+    onStepFinish: async step => {
       const activities = collectToolActivities([step], mcpToolNames);
-      activities.forEach(activity => {
+      await Promise.all(activities.map(async activity => {
         if (activity.output !== undefined) {
-          rememberSessionResearch({
+          await rememberCompressedSessionResearch({
             toolName: activity.toolName,
             input: activity.input,
             output: activity.output,
-          });
+          }, reportActivity);
         }
         reportActivity({
           type: 'progress',
@@ -139,7 +140,7 @@ async function generateResearchText(
           input: activity.input,
           ...(activity.output === undefined ? {} : { output: activity.output }),
         });
-      });
+      }));
     },
   });
   reportTokenUsages(

@@ -12,20 +12,24 @@ import type {
 import { getLlmClient, CHAT_MODEL } from '../llm-client';
 import { getMcpTools } from '../mcp';
 import { reportTokenUsages } from '../token-usage';
-import { getSessionResearchMemory, rememberSessionResearch } from '../session';
+import { getSessionResearchMemory } from '../session';
+import { rememberCompressedSessionResearch } from '../session-memory';
 import { SYSTEM_PROMPT } from './agent';
 import { classifyArchiveDocument } from './archive';
 import { createBrowserSearchTool } from './browser-search-tool';
+import {
+  attachToolNames,
+  collectGenerationMetadata,
+  createDecisionGeneration,
+  getGenerationToolFailures,
+  getGenerationToolNames,
+  reportDecisionStatement,
+  reportGenerationToolUsage,
+} from './decision-progress';
 import { parseDecision } from './decision';
 import { buildDecisionPrompt } from './prompts';
 import { runDeepResearch } from './research';
-import {
-  collectToolActivities,
-  collectToolDisplayNames,
-  collectToolFailures,
-  type ToolActivity,
-  type ToolFailure,
-} from './tool-usage';
+import type { ToolActivity, ToolFailure } from './tool-usage';
 import type { SessionMessage } from './types';
 
 export type DecisionGeneration = {
@@ -45,121 +49,26 @@ export type DecisionGenerator = (
 
 const ignoreProgress: LlmActivityReporter = () => undefined;
 
-function reportDecisionStatement(
-  decision: LlmClarifyDecision | LlmFinalDecisionDraft,
-  reportProgress: LlmActivityReporter
-): void {
-  reportProgress({
-    type: 'progress',
-    phase: 'process',
-    message: decision.type === 'final' ? 'LLM 已形成最终决策' : 'LLM 已形成澄清问题',
-    details: decision.message,
-  });
-}
-
-function createToolProgress(
-  toolNames: readonly string[],
-  details?: string
-): LlmProgressDecision {
-  return {
-    type: 'progress',
-    phase: 'tool-call',
-    message: `工具调用：${toolNames.join('、')}`,
-    ...(details ? { details } : {}),
-  };
-}
-
-function reportTerminalToolUsage(
-  decision: LlmClarifyDecision | LlmFinalDecisionDraft | LlmProgressDecision,
-  toolNames: readonly string[],
-  reportProgress: LlmActivityReporter
-): void {
-  if (decision.type === 'progress') return;
-  if (toolNames.length === 0) return;
-  const toolProgress = createToolProgress(toolNames);
-  reportProgress(toolProgress);
-}
-
-function reportToolActivities(
+async function rememberToolActivities(
   activities: readonly ToolActivity[],
   reportProgress: LlmActivityReporter
-): void {
-  activities.forEach(activity => reportProgress({
-    type: 'progress',
-    phase: 'tool-call',
-    message: activity.toolName,
-    operationId: activity.operationId,
-    input: activity.input,
-    ...(activity.output === undefined ? {} : { output: activity.output }),
-  }));
-}
-
-function rememberToolActivities(activities: readonly ToolActivity[]): void {
-  activities.forEach(activity => {
+): Promise<void> {
+  await Promise.all(activities.map(async activity => {
     if (activity.output === undefined) return;
-    rememberSessionResearch({
+    await rememberCompressedSessionResearch({
       toolName: activity.toolName,
       input: activity.input,
       output: activity.output,
-    });
-  });
+    }, reportProgress);
+  }));
 }
 
-function reportGenerationToolUsage(
-  decision: LlmClarifyDecision | LlmFinalDecisionDraft | LlmProgressDecision,
-  generation: DecisionGeneration,
-  reportProgress: LlmActivityReporter
-): void {
-  const activities = generation.toolActivities ?? [];
-  if (activities.length > 0) {
-    reportToolActivities(activities, reportProgress);
-    return;
-  }
-  reportTerminalToolUsage(decision, getGenerationToolNames(generation), reportProgress);
-}
-
-function buildToolProgressDetails(
-  decisionMessage: string,
-  toolFailures: readonly ToolFailure[]
-): string {
-  const failureDetails = toolFailures.map(
-    failure => `${failure.toolName}: ${failure.error}`
-  ).join('；');
-  if (!failureDetails) return decisionMessage;
-  return `${decisionMessage}。失败工具（后续不要重试）：${failureDetails}`;
-}
-
-function attachToolNames(
-  decision: LlmClarifyDecision | LlmFinalDecisionDraft | LlmProgressDecision,
-  toolNames: readonly string[],
-  toolFailures: readonly ToolFailure[]
-): LlmClarifyDecision | LlmFinalDecisionDraft | LlmProgressDecision {
-  if (decision.type !== 'progress') return decision;
-  if (toolNames.length === 0) return decision;
-  return {
-    ...createToolProgress(
-      toolNames,
-      buildToolProgressDetails(decision.message, toolFailures)
-    ),
-  };
-}
-
-function getGenerationToolNames(
-  generation: DecisionGeneration
-): readonly string[] {
-  return generation.toolNames ?? [];
-}
-
-function getGenerationToolFailures(
-  generation: DecisionGeneration
-): readonly ToolFailure[] {
-  return generation.toolFailures ?? [];
-}
 
 async function generateDecision(
   sessionMessages: readonly SessionMessage[],
   progress?: LlmProgressDecision,
-  excludedToolNames: ReadonlySet<string> = new Set()
+  excludedToolNames: ReadonlySet<string> = new Set(),
+  reportProgress: LlmActivityReporter = ignoreProgress
 ): Promise<DecisionGeneration> {
   const client = getLlmClient();
   const mcpTools = getMcpTools();
@@ -178,32 +87,16 @@ async function generateDecision(
     maxSteps: 5,
   });
 
-  const toolNames = collectToolDisplayNames(
-    result.steps,
-    new Set(Object.keys(availableMcpTools))
+  const availableToolNames = new Set(Object.keys(availableMcpTools));
+  const metadata = collectGenerationMetadata(result.steps, availableToolNames);
+  await rememberToolActivities(metadata.toolActivities, reportProgress);
+  return createDecisionGeneration(
+    result.text,
+    metadata.toolNames,
+    metadata.toolActivities,
+    metadata.toolFailures,
+    metadata.tokenUsages
   );
-  const toolActivities = collectToolActivities(
-    result.steps,
-    new Set(Object.keys(availableMcpTools))
-  );
-  rememberToolActivities(toolActivities);
-  const toolFailures = collectToolFailures(result.steps);
-  const tokenUsages = result.steps.map(step => ({
-    inputTokens: step.usage.promptTokens,
-    outputTokens: step.usage.completionTokens,
-    totalTokens: step.usage.totalTokens,
-  }));
-  if (toolNames.length > 0) {
-    return {
-      text: result.text,
-      phaseHint: 'tool-call',
-      toolActivities,
-      toolNames,
-      toolFailures,
-      tokenUsages,
-    };
-  }
-  return { text: result.text, tokenUsages };
 }
 
 function formatResearchTasks(
@@ -285,7 +178,12 @@ export async function makeDecision(
   });
   const decision = await resolveDecisionDraft(
     sessionMessages,
-    generateDecision,
+    (messages, progress, excludedTools) => generateDecision(
+      messages,
+      progress,
+      excludedTools,
+      reportProgress
+    ),
     undefined,
     reportProgress
   );

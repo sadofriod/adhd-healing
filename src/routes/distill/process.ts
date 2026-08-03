@@ -9,8 +9,9 @@ import {
   resetSession,
   appendToSession,
   addSessionTokenUsage,
-  clearSession,
+  flushSessionPersistence,
   getSessionTokenUsage,
+  markSessionFinished,
   prepareUserTurn,
 } from '../../services/session';
 import { makeDecision } from '../../services/clarification';
@@ -58,7 +59,7 @@ async function handleComplete(
     tokenUsage,
   });
 
-  clearSession();
+  await markSessionFinished();
   return {
     status: 'FINISH',
     text: [
@@ -75,9 +76,10 @@ async function handleComplete(
   };
 }
 
-function handleContinue(decision: { message: string }): DistillApiResponse {
+async function handleContinue(decision: { message: string }): Promise<DistillApiResponse> {
   console.log(`[distill] 💬 AI 追问: ${decision.message}`);
-  appendToSession('assistant', decision.message);
+  await appendToSession('assistant', decision.message);
+  await flushSessionPersistence();
   return { status: 'CONTINUE', text: decision.message };
 }
 
@@ -115,10 +117,10 @@ export async function processDistill(
   reqData: DistillRequest,
   reportProgress: LlmActivityReporter
 ): Promise<DistillApiResponse> {
-  if (reqData.reset) resetSession();
+  if (reqData.reset) await resetSession();
 
   console.log(`[distill] ${getRequestLogLabel(reqData.resume)}: ${reqData.text}`);
-  const session = prepareUserTurn(reqData.text, reqData.resume === true);
+  const session = await prepareUserTurn(reqData.text, reqData.resume === true);
 
   const reportActivity = (event: LlmActivityEvent): void => {
     if (event.type === 'usage') addSessionTokenUsage(event.usage);

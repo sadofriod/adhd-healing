@@ -24,8 +24,6 @@ progress 仅用于确实无法在本次生成中取得结果的异步步骤。�
 researchTopics 可以为空数组。只有垂直、细分或交叉领域会直接改变主报告执行方案时才加入；普通背景知识、弱相关延伸和主报告已充分覆盖的内容不得加入。每个主题会启动独立深度调研子 Agent。
 `.trim();
 
-const MEMORY_OUTPUT_LENGTH = 2_000;
-
 function serializeMemoryOutput(output: unknown): string {
   try {
     return JSON.stringify(output) ?? String(output);
@@ -34,18 +32,12 @@ function serializeMemoryOutput(output: unknown): string {
   }
 }
 
-function formatMemoryOutput(output: unknown): string {
-  const serialized = serializeMemoryOutput(output);
-  if (serialized.length <= MEMORY_OUTPUT_LENGTH) return serialized;
-  return `${serialized.slice(0, MEMORY_OUTPUT_LENGTH)}…`;
-}
-
 export function buildMemoryInstruction(memory: readonly SessionResearchMemory[]): string {
   if (memory.length === 0) return '';
   const entries = memory.map(entry => ({
     toolName: entry.toolName,
     input: entry.input,
-    output: formatMemoryOutput(entry.output),
+    output: serializeMemoryOutput(entry.output),
   }));
   return `
 Session 调研记忆（已经完成的工具查询）：

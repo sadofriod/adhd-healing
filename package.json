@@ -6,13 +6,18 @@
   "packageManager": "pnpm@10.22.0",
   "scripts": {
     "build:web": "bun scripts/build-web.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "postinstall": "DATABASE_URL=file:../data/sessions.db prisma generate",
     "start": "pnpm run build:web && bun --env-file=.env scripts/start.ts",
     "archive:reclassify": "bun --env-file=.env scripts/reclassify-local-vault.ts",
-    "test": "DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
+    "test": "DATABASE_URL=file:/tmp/adhd-healing-test.db prisma migrate deploy && DATABASE_URL=file:/tmp/adhd-healing-test.db DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.22",
+    "@prisma/client": "6.19.3",
     "@smith-and-web/obsidian-mcp-server": "1.4.0",
     "ai": "^4.3.16",
     "react": "^19.1.1",
@@ -26,6 +31,7 @@
     "@types/react-dom": "^19.1.6",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
+    "prisma": "6.19.3",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.21.0"
   }

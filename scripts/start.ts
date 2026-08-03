@@ -1,4 +1,5 @@
 import { mkdir } from 'fs/promises';
+import { resolve } from 'path';
 import { config } from '../src/config/env';
 import { loadMcpConfig, type McpConfig } from '../src/services/mcpConfig';
 
@@ -62,6 +63,17 @@ function spawnProcess(command: string[], environment?: Record<string, string | u
     stdout: 'inherit',
     stderr: 'inherit',
   });
+}
+
+async function deployDatabaseMigrations(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL
+    ?? `file:${resolve(process.cwd(), 'data/sessions.db')}`;
+  const migration = spawnProcess(['pnpm', 'exec', 'prisma', 'migrate', 'deploy'], {
+    ...process.env,
+    DATABASE_URL: databaseUrl,
+  });
+  const exitCode = await migration.exited;
+  if (exitCode !== 0) throw new Error(`database migration failed with code ${exitCode}`);
 }
 
 function assertProcessRunning(processName: ProcessName, child: ManagedProcess): void {
@@ -137,6 +149,7 @@ function getExitCode(exit: ProcessExit): number {
 }
 
 async function start(): Promise<number> {
+  await deployDatabaseMigrations();
   const endpoint = await resolveObsidianEndpoint();
   await assertMcpEndpointAvailable(endpoint.healthUrl);
   await mkdir(config.obsidianVaultPath, { recursive: true });
