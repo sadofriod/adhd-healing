@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   addSessionTokenUsage,
+  activateSession,
   appendToSession,
   clearSession,
   deleteSessionHistory,
   flushSessionPersistence,
+  getCurrentSessionId,
   getSession,
   getSessionResearchMemory,
   getSessionTokenUsage,
@@ -12,6 +14,7 @@ import {
   prepareUserTurn,
   resetSession,
   rememberSessionResearch,
+  runWithSessionContext,
 } from './session';
 import { database } from './database';
 
@@ -20,22 +23,24 @@ afterEach(deleteSessionHistory);
 
 describe('session token usage', () => {
   test('accumulates usage and resets it for a new session', async () => {
-    await resetSession();
-    addSessionTokenUsage({ inputTokens: 100, outputTokens: 20, totalTokens: 120 });
-    addSessionTokenUsage({ inputTokens: 50, outputTokens: 10, totalTokens: 60 });
+    await runWithSessionContext(async () => {
+      await resetSession();
+      addSessionTokenUsage({ inputTokens: 100, outputTokens: 20, totalTokens: 120 });
+      addSessionTokenUsage({ inputTokens: 50, outputTokens: 10, totalTokens: 60 });
 
-    expect(getSessionTokenUsage()).toEqual({
-      inputTokens: 150,
-      outputTokens: 30,
-      totalTokens: 180,
-    });
+      expect(getSessionTokenUsage()).toEqual({
+        inputTokens: 150,
+        outputTokens: 30,
+        totalTokens: 180,
+      });
 
-    await resetSession();
+      await resetSession();
 
-    expect(getSessionTokenUsage()).toEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
+      expect(getSessionTokenUsage()).toEqual({
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+      });
     });
   });
 });
@@ -73,6 +78,39 @@ describe('session research memory', () => {
 });
 
 describe('session task resume', () => {
+  test('keeps an earlier async turn isolated from a later session reset', async () => {
+    let releaseFirstTurn!: () => void;
+    const firstTurnGate = new Promise<void>(resolve => {
+      releaseFirstTurn = resolve;
+    });
+    const firstSessionMessages: Array<{ role: 'user' | 'assistant'; content: string }>[] = [];
+    const secondSessionMessages: Array<{ role: 'user' | 'assistant'; content: string }>[] = [];
+
+    const firstTurn = runWithSessionContext(async () => {
+      await resetSession();
+      await prepareUserTurn('第一次会话', false);
+      await firstTurnGate;
+      await appendToSession('assistant', '第一次回答');
+
+      firstSessionMessages.push([...getSession()]);
+    });
+
+    const secondTurn = runWithSessionContext(async () => {
+      await resetSession();
+      await prepareUserTurn('第二次会话', false);
+      releaseFirstTurn();
+      secondSessionMessages.push([...getSession()]);
+    });
+
+    await Promise.all([firstTurn, secondTurn]);
+
+    expect(firstSessionMessages[0]).toEqual([
+      { role: 'user', content: '第一次会话' },
+      { role: 'assistant', content: '第一次回答' },
+    ]);
+    expect(secondSessionMessages[0]).toEqual([{ role: 'user', content: '第二次会话' }]);
+  });
+
   test('reuses the pending user turn without appending it twice', async () => {
     await resetSession();
     await prepareUserTurn('继续商业化分析', false);
@@ -93,6 +131,31 @@ describe('session task resume', () => {
 });
 
 describe('session persistence', () => {
+  test('starts a fresh session in a new runtime without inheriting prior memory', async () => {
+    let previousSessionId = '';
+
+    await runWithSessionContext(async () => {
+      await resetSession();
+      await prepareUserTurn('旧会话问题', false);
+      await appendToSession('assistant', '旧会话回答');
+      await rememberSessionResearch({
+        toolName: 'browser_search',
+        input: { query: 'leaky session' },
+        output: { result: 'stale memory' },
+      });
+      await flushSessionPersistence();
+      previousSessionId = getCurrentSessionId() ?? '';
+    });
+
+    await runWithSessionContext(async () => {
+      await prepareUserTurn('新会话问题', false);
+
+      expect(getCurrentSessionId()).not.toBe(previousSessionId);
+      expect(getSession()).toEqual([{ role: 'user', content: '新会话问题' }]);
+      expect(getSessionResearchMemory()).toEqual([]);
+    });
+  });
+
   test('reloads messages and research memory from SQLite', async () => {
     await resetSession();
     await prepareUserTurn('持久化问题', false);
@@ -104,7 +167,10 @@ describe('session persistence', () => {
     });
     await flushSessionPersistence();
 
+    const sessionId = getCurrentSessionId();
     clearSession();
+    if (!sessionId) throw new Error('Expected a session id');
+    await activateSession(sessionId);
     await prepareUserTurn('继续追问', false);
 
     expect(getSession()).toEqual([
@@ -120,8 +186,11 @@ describe('session persistence', () => {
     await prepareUserTurn('第一轮问题', false);
     await appendToSession('assistant', '第一轮完成');
     await markSessionFinished();
+    const sessionId = getCurrentSessionId();
     clearSession();
 
+    if (!sessionId) throw new Error('Expected a session id');
+    await activateSession(sessionId);
     await prepareUserTurn('完成后继续讨论', false);
     await flushSessionPersistence();
 

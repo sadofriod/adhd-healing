@@ -22,6 +22,15 @@ export type DistillRequest = {
   readonly text: string;
   readonly reset: boolean;
   readonly resume?: boolean;
+  readonly sessionId?: string;
+  readonly attachments?: readonly DistillAttachment[];
+};
+
+export type DistillAttachment = {
+  readonly name: string;
+  readonly content: string;
+  readonly mimeType?: string;
+  readonly size: number;
 };
 
 export type LlmTokenUsage = {
@@ -30,20 +39,23 @@ export type LlmTokenUsage = {
   readonly totalTokens: number;
 };
 
+type DistillApiResponseBase = {
+  readonly status: WorkflowStatus;
+  readonly text: string;
+  readonly sessionId: string;
+};
+
 export type DistillApiResponse =
-  | {
+  | (DistillApiResponseBase & {
       readonly status: 'CONTINUE';
-      readonly text: string;
-    }
-  | {
+    })
+  | (DistillApiResponseBase & {
       readonly status: 'PAUSED';
-      readonly text: string;
-    }
-  | {
+    })
+  | (DistillApiResponseBase & {
       readonly status: 'FINISH';
-      readonly text: string;
       readonly tokenUsage: LlmTokenUsage;
-    };
+    });
 
 export type DistillStreamEvent =
   | LlmProgressDecision

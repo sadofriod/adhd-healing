@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { LlmTokenUsage, SessionHistoryItem } from '../types';
 import { database } from './database';
 import { addTokenUsage, EMPTY_TOKEN_USAGE } from './token-usage';
@@ -32,8 +33,31 @@ type SessionState = {
   researchMemory: readonly SessionResearchMemory[];
 };
 
-let currentSession: SessionState | null = null;
+type SessionRuntimeContext = {
+  currentSession: SessionState | null;
+  selectedSessionId: string | null;
+};
+
+const sessionContextStorage = new AsyncLocalStorage<SessionRuntimeContext>();
+let fallbackRuntimeContext = createRuntimeContext();
 let pendingPersistence: Promise<void> = Promise.resolve();
+
+export function runWithSessionContext<T>(operation: () => Promise<T> | T): Promise<T> {
+  return sessionContextStorage.run(createRuntimeContext(), async () => operation());
+}
+
+function createRuntimeContext(): SessionRuntimeContext {
+  return {
+    currentSession: null,
+    selectedSessionId: null,
+  };
+}
+
+function getRuntimeContext(): SessionRuntimeContext {
+  const existing = sessionContextStorage.getStore();
+  if (existing) return existing;
+  return fallbackRuntimeContext;
+}
 
 function sortJsonRecord(value: object): Record<string, unknown> {
   return Object.fromEntries(
@@ -101,19 +125,27 @@ async function createSession(): Promise<SessionState> {
   };
 }
 
-async function loadLatestSession(): Promise<SessionState> {
-  const query = {
-    include: {
-      messages: { orderBy: { id: 'asc' } },
-      researchMemory: { orderBy: { updatedAt: 'asc' } },
-    },
-    orderBy: { updatedAt: 'desc' },
-  } as const;
-  const persisted = await database.session.findFirst({
-    ...query,
-    where: { status: 'ACTIVE' },
-  }) ?? await database.session.findFirst(query);
-  if (!persisted) return createSession();
+const SESSION_LOAD_QUERY = {
+  include: {
+    messages: { orderBy: { id: 'asc' } },
+    researchMemory: { orderBy: { updatedAt: 'asc' } },
+  },
+} as const;
+
+function toSessionState(persisted: {
+  id: string;
+  status: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  messages: Array<{ role: string; content: string }>;
+  researchMemory: Array<{
+    key: string;
+    toolName: string;
+    inputJson: string;
+    outputJson: string;
+  }>;
+}): SessionState {
   return {
     id: persisted.id,
     messages: persisted.messages.map(message => ({
@@ -135,9 +167,33 @@ async function loadLatestSession(): Promise<SessionState> {
   };
 }
 
+async function loadSessionById(sessionId: string): Promise<SessionState | null> {
+  const persisted = await database.session.findUnique({
+    ...SESSION_LOAD_QUERY,
+    where: { id: sessionId },
+  });
+  if (!persisted) return null;
+  return toSessionState(persisted);
+}
+
+function setRuntimeSession(session: SessionState | null): void {
+  const runtime = getRuntimeContext();
+  runtime.currentSession = session;
+  runtime.selectedSessionId = session?.id ?? null;
+}
+
 async function ensureSession(): Promise<SessionState> {
-  if (!currentSession) currentSession = await loadLatestSession();
-  return currentSession;
+  const runtime = getRuntimeContext();
+  if (runtime.currentSession) return runtime.currentSession;
+  if (runtime.selectedSessionId) {
+    const selectedSession = await loadSessionById(runtime.selectedSessionId);
+    if (!selectedSession) throw new Error(`Session not found: ${runtime.selectedSessionId}`);
+    runtime.currentSession = selectedSession;
+    return selectedSession;
+  }
+  runtime.currentSession = await createSession();
+  runtime.selectedSessionId = runtime.currentSession.id;
+  return runtime.currentSession;
 }
 
 function getSessionTitle(messages: readonly SessionMessage[]): string {
@@ -178,39 +234,44 @@ export async function activateSession(sessionId: string): Promise<boolean> {
   await flushSessionPersistence();
   const selected = await database.session.findUnique({ where: { id: sessionId } });
   if (!selected) return false;
-  await database.$transaction([
-    database.session.updateMany({
-      where: { status: 'ACTIVE', id: { not: sessionId } },
-      data: { status: 'ABANDONED', finishedAt: new Date() },
-    }),
-    database.session.update({
-      where: { id: sessionId },
-      data: { status: 'ACTIVE', finishedAt: null },
-    }),
-  ]);
-  currentSession = null;
-  await ensureSession();
+  await database.session.update({
+    where: { id: sessionId },
+    data: { status: 'ACTIVE', finishedAt: null },
+  });
+  setRuntimeSession(await loadSessionById(sessionId));
   return true;
 }
 
+export async function bindSession(sessionId: string): Promise<boolean> {
+  await flushSessionPersistence();
+  const session = await loadSessionById(sessionId);
+  if (!session) return false;
+  setRuntimeSession(session);
+  return true;
+}
+
+export function getCurrentSessionId(): string | null {
+  const runtime = getRuntimeContext();
+  return runtime.currentSession?.id ?? runtime.selectedSessionId;
+}
+
 export function getSession(): SessionMessage[] {
-  return currentSession?.messages ?? [];
+  return getRuntimeContext().currentSession?.messages ?? [];
 }
 
 export async function resetSession(): Promise<void> {
   await flushSessionPersistence();
+  const runtime = getRuntimeContext();
+  const currentSession = runtime.currentSession
+    ?? (runtime.selectedSessionId ? await loadSessionById(runtime.selectedSessionId) : null);
   if (currentSession?.status === 'ACTIVE') {
     await database.session.update({
       where: { id: currentSession.id },
       data: { status: 'ABANDONED', finishedAt: new Date() },
     });
-  } else {
-    await database.session.updateMany({
-      where: { status: 'ACTIVE' },
-      data: { status: 'ABANDONED', finishedAt: new Date() },
-    });
   }
-  currentSession = await createSession();
+  runtime.currentSession = await createSession();
+  runtime.selectedSessionId = runtime.currentSession.id;
   console.log('[session] 开启新一轮脑暴 Session');
 }
 
@@ -253,8 +314,7 @@ export async function prepareUserTurn(
 }
 
 export function clearSession(): void {
-  currentSession = null;
-  pendingPersistence = Promise.resolve();
+  setRuntimeSession(null);
 }
 
 export async function rememberSessionResearch(
@@ -285,14 +345,15 @@ export async function rememberSessionResearch(
 }
 
 export function getSessionResearchMemory(): readonly SessionResearchMemory[] {
-  return currentSession?.researchMemory ?? [];
+  return getRuntimeContext().currentSession?.researchMemory ?? [];
 }
 
 export function addSessionTokenUsage(usage: LlmTokenUsage): void {
-  if (!currentSession) throw new Error('Cannot record token usage without a session');
-  currentSession.tokenUsage = addTokenUsage(currentSession.tokenUsage, usage);
-  const tokenUsage = currentSession.tokenUsage;
-  const sessionId = currentSession.id;
+  const runtime = getRuntimeContext();
+  if (!runtime.currentSession) throw new Error('Cannot record token usage without a session');
+  runtime.currentSession.tokenUsage = addTokenUsage(runtime.currentSession.tokenUsage, usage);
+  const tokenUsage = runtime.currentSession.tokenUsage;
+  const sessionId = runtime.currentSession.id;
   queuePersistence(() => database.session.update({
     where: { id: sessionId },
     data: tokenUsage,
@@ -300,7 +361,7 @@ export function addSessionTokenUsage(usage: LlmTokenUsage): void {
 }
 
 export function getSessionTokenUsage(): LlmTokenUsage {
-  return currentSession?.tokenUsage ?? EMPTY_TOKEN_USAGE;
+  return getRuntimeContext().currentSession?.tokenUsage ?? EMPTY_TOKEN_USAGE;
 }
 
 export async function markSessionFinished(): Promise<void> {
@@ -320,5 +381,6 @@ export async function flushSessionPersistence(): Promise<void> {
 export async function deleteSessionHistory(): Promise<void> {
   await flushSessionPersistence();
   await database.session.deleteMany();
+  fallbackRuntimeContext = createRuntimeContext();
   clearSession();
 }

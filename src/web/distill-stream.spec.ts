@@ -11,6 +11,7 @@ function createStreamResponse(events: readonly DistillStreamEvent[]): Response {
 
 describe('distill activity stream', () => {
   test('reports progress before resolving the result', async () => {
+    const sessionId = 'session-1';
     const progressEvents: Array<{ message: string; details?: string }> = [];
     const toolExchanges: Array<{
       operationId?: string;
@@ -34,7 +35,7 @@ describe('distill activity stream', () => {
         input: { path: 'README.md' },
         output: { content: '# Agent Company' },
       },
-      { type: 'result', result: { status: 'CONTINUE', text: '请补充目标用户' } },
+      { type: 'result', result: { status: 'CONTINUE', sessionId, text: '请补充目标用户' } },
     ]);
 
     const result = await readDistillStream(
@@ -73,34 +74,36 @@ describe('distill activity stream', () => {
       input: { path: 'README.md' },
       output: { content: '# Agent Company' },
     }]);
-    expect(result).toEqual({ status: 'CONTINUE', text: '请补充目标用户' });
+    expect(result).toEqual({ status: 'CONTINUE', sessionId, text: '请补充目标用户' });
   });
 
 });
 
 describe('distill result stream', () => {
   test('parses total token usage from the final result', async () => {
+    const sessionId = 'session-2';
     const tokenUsage = { inputTokens: 1200, outputTokens: 300, totalTokens: 1500 };
     const response = createStreamResponse([
       {
         type: 'result',
-        result: { status: 'FINISH', text: '已落地产物', tokenUsage },
+        result: { status: 'FINISH', sessionId, text: '已落地产物', tokenUsage },
       },
     ]);
 
     const result = await readDistillStream(response, () => undefined);
 
-    expect(result).toEqual({ status: 'FINISH', text: '已落地产物', tokenUsage });
+    expect(result).toEqual({ status: 'FINISH', sessionId, text: '已落地产物', tokenUsage });
   });
 
   test('returns a paused result for a recoverable network failure', async () => {
+    const sessionId = 'session-3';
     const response = createStreamResponse([
-      { type: 'result', result: { status: 'PAUSED', text: 'fetch failed' } },
+      { type: 'result', result: { status: 'PAUSED', sessionId, text: 'fetch failed' } },
     ]);
 
     const result = await readDistillStream(response, () => undefined);
 
-    expect(result).toEqual({ status: 'PAUSED', text: 'fetch failed' });
+    expect(result).toEqual({ status: 'PAUSED', sessionId, text: 'fetch failed' });
   });
 
   test('surfaces a streamed server error', async () => {

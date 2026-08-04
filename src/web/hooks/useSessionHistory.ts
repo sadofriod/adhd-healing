@@ -45,7 +45,6 @@ function getActivatedStatus(
   selectedId: string
 ): SessionHistoryItem['status'] {
   if (item.id === selectedId) return 'ACTIVE';
-  if (item.status === 'ACTIVE') return 'ABANDONED';
   return item.status;
 }
 

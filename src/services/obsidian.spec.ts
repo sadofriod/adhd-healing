@@ -27,13 +27,11 @@ describe('Obsidian MCP persistence', () => {
     expect(note.content).toContain('type: brain-distill');
     expect(note.content).toContain('milestone: "启动 MCP 网关"');
     expect(note.content).toContain('  - "Obsidian"');
-    expect(note.content).toContain('category: "[[AI 工作流]]"');
-    expect(note.content).toContain('subcategory: "[[本地知识库]]"');
-    expect(note.content).toContain('  - "[[Model Context Protocol]]"');
-    expect(note.content).toContain('## 🕸️ 知识图谱关系');
-    expect(note.content).toContain('- 领域：[[AI 工作流]]');
-    expect(note.content).toContain('- 关联概念：[[Bun]] · [[Obsidian]] · [[Model Context Protocol]]');
+    expect(note.content).toContain('category: "AI 工作流"');
+    expect(note.content).toContain('subcategory: "本地知识库"');
     expect(note.content).toContain('[[Model Context Protocol]]');
+    expect(note.content).not.toContain('## 🕸️ 知识图谱关系');
+    expect(note.content).not.toContain('related:');
   });
 
   it('persists through the configured MCP write tool', async () => {

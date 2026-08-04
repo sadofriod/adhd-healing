@@ -29,6 +29,61 @@ const input = {
 } as const;
 
 describe('Obsidian artifact bundles', () => {
+  it('materializes llm-chosen wiki links into real session documents', () => {
+    const bundle = buildObsidianArtifactBundle({
+      ...input,
+      sessionId: 'cmec2n97u0000abc123def456',
+      researchArtifacts: [],
+      markdown: [
+        '# 脑暴归档',
+        '',
+        '## 💡 核心演进',
+        '使用 [[MCP 实施指南]] 连接 [[Obsidian 自动归档|Obsidian 自动归档]]。',
+        '',
+        '## 🎯 衍生双链',
+        '- [[MCP 实施指南]] — 约束工具接入。',
+        '- [[Obsidian 自动归档]] — 约束归档落盘。',
+      ].join('\n'),
+    });
+
+    expect(bundle.mainNote.content).toContain(
+      '[[session-cmec2n97u0000abc123def456/MCP-实施指南|MCP 实施指南]]'
+    );
+    expect(bundle.mainNote.content).toContain(
+      '[[session-cmec2n97u0000abc123def456/Obsidian-自动归档|Obsidian 自动归档]]'
+    );
+    expect(bundle.linkedNotes.map(note => note.path)).toEqual([
+      'session-cmec2n97u0000abc123def456/MCP-实施指南.md',
+      'session-cmec2n97u0000abc123def456/Obsidian-自动归档.md',
+    ]);
+    expect(bundle.linkedNotes[0]!.content).toContain('type: brain-distill-link');
+  });
+
+  it('keeps multiple finishes from one session under one directory', () => {
+    const firstBundle = buildObsidianArtifactBundle({
+      ...input,
+      sessionId: 'cmec2n97u0000abc123def456',
+    });
+    const secondBundle = buildObsidianArtifactBundle({
+      ...input,
+      title: '第二次收束',
+      sessionId: 'cmec2n97u0000abc123def456',
+      now: new Date('2026-08-01T10:07:32.300Z'),
+    });
+
+    expect(firstBundle.directoryPath).toBe('session-cmec2n97u0000abc123def456');
+    expect(secondBundle.directoryPath).toBe(firstBundle.directoryPath);
+    expect(firstBundle.mainNote.path).toBe(
+      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化.md'
+    );
+    expect(secondBundle.mainNote.path).toBe(
+      'session-cmec2n97u0000abc123def456/2026-08-01-100732300-第二次收束.md'
+    );
+    expect(firstBundle.researchNotes[0]!.path).toBe(
+      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南.md'
+    );
+  });
+
   it('builds one directory with bidirectional main and research links', () => {
     const bundle = buildObsidianArtifactBundle(input);
 
@@ -61,6 +116,7 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.researchNotes).toEqual([]);
+    expect(bundle.linkedNotes).toEqual([]);
     expect(bundle.mainNote.content).not.toContain('## 深度调研产物');
     expect(bundle.mainNote.content).not.toContain('children:');
   });
@@ -68,6 +124,7 @@ describe('Obsidian artifact bundles', () => {
   it('uses distinct paths when sanitized artifact titles collide', () => {
     const bundle = buildObsidianArtifactBundle({
       ...input,
+      sessionId: 'cmec2n97u0000abc123def456',
       researchArtifacts: [
         { ...input.researchArtifacts[0], title: '许可证/执行指南' },
         { ...input.researchArtifacts[1], title: '许可证执行指南' },
@@ -75,8 +132,8 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.researchNotes.map(note => note.path)).toEqual([
-      '2026-08-01-090732300-Agent-商业化/许可证执行指南.md',
-      '2026-08-01-090732300-Agent-商业化/许可证执行指南-2.md',
+      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南.md',
+      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南-2.md',
     ]);
   });
 

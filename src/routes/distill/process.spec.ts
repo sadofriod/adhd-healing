@@ -38,7 +38,10 @@ function buildFinalDecision(includeResearchTopics: boolean): LlmFinalDecision {
 describe('processDistill', () => {
   test('runs deep research before finalization when the final decision includes research topics', async () => {
     const researchInputs: Array<{ title: string; topics: LlmFinalDecision['researchTopics'] }> = [];
-    let finalizeInput: { researchArtifacts: readonly unknown[] } | undefined;
+    let finalizeInput: {
+      sessionId: string;
+      researchArtifacts: readonly unknown[];
+    } | undefined;
 
     const response = await processDistill(REQUEST, () => undefined, {
       makeDecision: async () => buildFinalDecision(true),
@@ -53,6 +56,7 @@ describe('processDistill', () => {
       },
       runFinalizeWritePipeline: async input => {
         finalizeInput = {
+          sessionId: input.sessionId,
           researchArtifacts: input.researchArtifacts,
         };
         return {
@@ -68,6 +72,7 @@ describe('processDistill', () => {
       title: '仓库分析',
       topics: buildFinalDecision(true).researchTopics,
     }]);
+    expect(finalizeInput?.sessionId).toBe(response.sessionId);
     expect(finalizeInput?.researchArtifacts).toHaveLength(1);
   });
 

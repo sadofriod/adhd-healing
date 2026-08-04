@@ -31,6 +31,7 @@ describe('clarification session research memory prompt', () => {
     const prompt = buildDecisionPrompt([{ role: 'user', content: '分析 Obsidian 图谱' }]);
 
     expect(prompt).toContain('独立 Obsidian 笔记');
-    expect(prompt).toContain('3-8 个稳定概念');
+    expect(prompt).toContain('已无值得继续追问的关键问题');
+    expect(prompt).toContain('双链必须克制');
   });
 });

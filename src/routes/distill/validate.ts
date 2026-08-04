@@ -4,6 +4,13 @@ import { DEFAULT_LOCALE } from '../../i18n/locale';
 import { getServerMessage } from '../../i18n/server-messages';
 import type { DistillRequest } from '../../types';
 
+const attachmentSchema = z.object({
+  name: z.string().trim().min(1),
+  content: z.string().min(1),
+  mimeType: z.string().trim().min(1).optional(),
+  size: z.coerce.number().int().nonnegative(),
+});
+
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -16,6 +23,8 @@ function createDistillRequestSchema(locale: Locale) {
     text: z.string().trim().min(1, getServerMessage(locale, 'distillTextRequired')),
     reset: z.boolean().default(false),
     resume: z.boolean().default(false),
+    sessionId: z.string().trim().min(1).optional(),
+    attachments: z.array(attachmentSchema).default([]),
   });
 }
 

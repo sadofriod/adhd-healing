@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isAbsolute, resolve } from 'path';
+import { parsePathList } from './path-list';
 
 function parseCliArgs(rawValue: string): string[] {
   const trimmed = rawValue.trim();
@@ -30,6 +31,7 @@ const envSchema = z.object({
   }),
   PORT: z.coerce.number().int().positive().max(65535).default(5001),
   MCP_CONFIG_PATH: z.string().trim().min(1).default(resolve(process.cwd(), 'mcp.json')),
+  MCP_FILESYSTEM_ALLOWED_DIRS: z.string().trim().default(''),
   OBSIDIAN_MCP_WRITE_TOOL: z.string().trim().min(1).default('obsidian_create-note'),
   OBSIDIAN_NOTE_FOLDER: z.string().trim().min(1).default('Brainstorm').refine(
     value => !isAbsolute(value) && !value.split(/[\\/]/).includes('..'),
@@ -53,14 +55,29 @@ function failInvalidEnv(error: z.ZodError): never {
   throw new Error('Invalid environment variables');
 }
 
+function resolveFilesystemAllowedDirs(rawValue: string): string[] {
+  return parsePathList(rawValue).map(entry => {
+    if (!isAbsolute(entry)) {
+      throw new Error(`MCP filesystem allowlist entries must be absolute paths: ${entry}`);
+    }
+
+    return entry;
+  });
+}
+
 const parsedEnv = envSchema.safeParse(Bun.env);
 const env = parsedEnv.success ? parsedEnv.data : failInvalidEnv(parsedEnv.error);
+const filesystemMcpAllowedDirs = Array.from(new Set([
+  env.BRAIN_VAULT_PATH,
+  ...resolveFilesystemAllowedDirs(env.MCP_FILESYSTEM_ALLOWED_DIRS),
+]));
 
 export const config = {
   deepseekApiKey: env.DEEPSEEK_API_KEY,
   brainVaultPath: env.BRAIN_VAULT_PATH,
   port: env.PORT,
   mcpConfigPath: env.MCP_CONFIG_PATH,
+  filesystemMcpAllowedDirs,
   obsidianMcpWriteTool: env.OBSIDIAN_MCP_WRITE_TOOL,
   obsidianNoteFolder: env.OBSIDIAN_NOTE_FOLDER,
   obsidianVaultPath: resolve(env.BRAIN_VAULT_PATH, env.OBSIDIAN_NOTE_FOLDER),

@@ -7,9 +7,12 @@ import type {
   LlmActivityReporter,
 } from '../types';
 import {
+  bindSession,
+  clearSession,
   resetSession,
   appendToSession,
   flushSessionPersistence,
+  getCurrentSessionId,
   getSessionTokenUsage,
   markSessionFinished,
   prepareUserTurn,
@@ -48,9 +51,39 @@ async function resolveResearchArtifacts(
 }
 
 async function prepareSessionTurn(reqData: DistillRequest): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  if (reqData.sessionId) {
+    const wasBound = await bindSession(reqData.sessionId);
+    if (!wasBound) throw new Error(`Session not found: ${reqData.sessionId}`);
+  } else {
+    clearSession();
+  }
   if (reqData.reset) await resetSession();
+  const content = buildUserTurnContent(reqData.text, reqData.attachments ?? []);
   console.log(`[distill] ${getRequestLogLabel(reqData.resume)}: ${reqData.text}`);
-  return prepareUserTurn(reqData.text, reqData.resume === true);
+  return prepareUserTurn(content, reqData.resume === true);
+}
+
+function requireCurrentSessionId(): string {
+  const sessionId = getCurrentSessionId();
+  if (!sessionId) throw new Error('Session was not initialized');
+  return sessionId;
+}
+
+function buildUserTurnContent(
+  text: string,
+  attachments: readonly { readonly name: string; readonly content: string; readonly mimeType?: string; readonly size: number }[]
+): string {
+  if (attachments.length === 0) return text;
+
+  const attachmentBlocks = attachments.map((attachment, index) => [
+    `【附件 ${index + 1}】${attachment.name}`,
+    attachment.mimeType ? `类型: ${attachment.mimeType}` : null,
+    `大小: ${attachment.size.toLocaleString()} 字节`,
+    '内容:',
+    attachment.content,
+  ].filter((line): line is string => line !== null).join('\n'));
+
+  return [text, '--- 附件内容 ---', ...attachmentBlocks].join('\n\n');
 }
 
 async function resolveDecision(
@@ -112,6 +145,7 @@ async function handleComplete(
   finalizeWritePipeline: typeof runFinalizeWritePipeline = runFinalizeWritePipeline
 ): Promise<DistillApiResponse> {
   console.log('[distill] 🏁 AI 决定收工，正在固化资产...');
+  const sessionId = requireCurrentSessionId();
   const tokenUsage = getSessionTokenUsage();
   reportProgress({
     type: 'progress',
@@ -120,6 +154,7 @@ async function handleComplete(
   });
 
   const artifactBundle = await finalizeWritePipeline({
+    sessionId,
     title: decision.title || 'untitled-idea',
     markdown: decision.markdown,
     milestone: decision.milestone,
@@ -134,6 +169,7 @@ async function handleComplete(
   await markSessionFinished();
   return {
     status: 'FINISH',
+    sessionId,
     text: [
       '🎉 澄清完成！',
       '',
@@ -168,7 +204,11 @@ async function handleContinue(
 
   await appendToSession('assistant', decision.message);
   await flushSessionPersistence();
-  return { status: 'CONTINUE', text: decision.message };
+  return {
+    status: 'CONTINUE',
+    sessionId: requireCurrentSessionId(),
+    text: decision.message,
+  };
 }
 
 function getRequestLogLabel(resume: boolean | undefined): string {

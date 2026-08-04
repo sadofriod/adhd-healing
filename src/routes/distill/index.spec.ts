@@ -10,7 +10,7 @@ function delay(milliseconds: number): Promise<void> {
 
 describe('distill response stream lifecycle', () => {
   test('sends heartbeats while the processor is idle', async () => {
-    const result: DistillApiResponse = { status: 'CONTINUE', text: '下一问' };
+    const result: DistillApiResponse = { status: 'CONTINUE', sessionId: 'session-1', text: '下一问' };
     const response = createStreamResponse(
       REQUEST,
       'heartbeat-test',
@@ -41,7 +41,7 @@ describe('distill response stream lifecycle', () => {
       async () => {
         await processorGate;
         processorCompleted = true;
-        return { status: 'CONTINUE', text: '不会写入已取消的流' };
+        return { status: 'CONTINUE', sessionId: 'session-2', text: '不会写入已取消的流' };
       },
       5
     );
@@ -68,10 +68,19 @@ describe('distill response stream lifecycle', () => {
 
     const body = await response.text();
 
-    expect(body).toContain(JSON.stringify({
-      type: 'result',
-      result: { status: 'PAUSED', text: 'fetch failed' },
-    }));
+    const resultEvent = JSON.parse(body.trim()) as {
+      readonly type: string;
+      readonly result?: {
+        readonly status: string;
+        readonly sessionId: string;
+        readonly text: string;
+      };
+    };
+
+    expect(resultEvent.type).toBe('result');
+    expect(resultEvent.result?.status).toBe('PAUSED');
+    expect(resultEvent.result?.text).toBe('fetch failed');
+    expect(resultEvent.result?.sessionId.length).toBeGreaterThan(0);
     expect(body).not.toContain('"type":"error"');
   });
 });

@@ -156,7 +156,6 @@ async function writeWithFixedBackend(
   return writeWithSelectedBackend(relativePath, content, options, vaultPath, backend);
 }
 
-// eslint-disable-next-line complexity
 export async function writeObsidianNote(
   relativePath: string,
   content: string,

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { Locale } from '../../i18n/locale';
 import type {
   DistillApiResponse,
+  DistillAttachment,
   LlmActivityEvent,
   LlmUsageEvent,
   SessionHistoryItem,
@@ -25,11 +26,12 @@ type DistillSessionState = {
   readonly loadSession: (session: SessionHistoryItem) => void;
   readonly resetSession: () => void;
   readonly resumeTask: () => Promise<void>;
-  readonly submitText: (text: string) => Promise<void>;
+  readonly submitText: (text: string, attachments?: readonly DistillAttachment[]) => Promise<void>;
 };
 
 type PendingTask = {
   readonly text: string;
+  readonly attachments: readonly DistillAttachment[];
   readonly userEntry: TimelineEntry;
   readonly usageEvents: LlmUsageEvent[];
 };
@@ -39,7 +41,7 @@ type CompletedDistillResponse = Exclude<DistillApiResponse, { status: 'PAUSED' }
 type TaskCallbacks = {
   readonly onActivity: (event: LlmActivityEvent) => void;
   readonly onError: (error: unknown) => void;
-  readonly onPause: () => void;
+  readonly onPause: (sessionId?: string) => void;
   readonly onSuccess: (result: CompletedDistillResponse) => void;
 };
 
@@ -66,10 +68,25 @@ function createTimelineEntry(
   return { id: crypto.randomUUID(), role, content, turnIndex, tokenUsage, estimatedCostUsd };
 }
 
-function createPendingTask(text: string, turnIndex: number): PendingTask {
+function buildUserEntryContent(text: string, attachments: readonly DistillAttachment[]): string {
+  if (attachments.length === 0) return text;
+
+  const attachmentSummary = attachments
+    .map(attachment => `- ${attachment.name} (${attachment.size.toLocaleString()} bytes)`)
+    .join('\n');
+
+  return `${text}\n\n已附加文件：\n${attachmentSummary}`;
+}
+
+function createPendingTask(
+  text: string,
+  attachments: readonly DistillAttachment[],
+  turnIndex: number
+): PendingTask {
   return {
     text,
-    userEntry: createTimelineEntry('user', text, turnIndex),
+    attachments,
+    userEntry: createTimelineEntry('user', buildUserEntryContent(text, attachments), turnIndex),
     usageEvents: [],
   };
 }
@@ -110,8 +127,10 @@ async function fetchDistill(
   text: string,
   reset: boolean,
   resume: boolean,
+  sessionId: string | null,
   locale: Locale,
-  onActivity: (event: LlmActivityEvent) => void
+  onActivity: (event: LlmActivityEvent) => void,
+  attachments: readonly DistillAttachment[] = []
 ): Promise<DistillApiResponse> {
   const response = await fetch('/distill', {
     method: 'POST',
@@ -119,7 +138,7 @@ async function fetchDistill(
       'Content-Type': 'application/json',
       'X-Locale': locale,
     },
-    body: JSON.stringify({ text, reset, resume }),
+    body: JSON.stringify({ text, reset, resume, sessionId: sessionId ?? undefined, attachments }),
   });
   return readDistillStream(response, onActivity, locale);
 }
@@ -141,13 +160,22 @@ async function runTask(
   task: PendingTask,
   reset: boolean,
   resume: boolean,
+  sessionId: string | null,
   locale: Locale,
   callbacks: TaskCallbacks
 ): Promise<void> {
   try {
-    const result = await fetchDistill(task.text, reset, resume, locale, callbacks.onActivity);
+    const result = await fetchDistill(
+      task.text,
+      reset,
+      resume,
+      sessionId,
+      locale,
+      callbacks.onActivity,
+      task.attachments
+    );
     if (result.status === 'PAUSED') {
-      callbacks.onPause();
+      callbacks.onPause(result.sessionId);
       return;
     }
     callbacks.onSuccess(result);
@@ -208,30 +236,33 @@ export function useDistillSession(locale: Locale): DistillSessionState {
   const [pendingReset, setPendingReset] = useState(false);
   const [progressEntries, setProgressEntries] = useState<readonly ProgressEntry[]>([]);
   const pendingTaskRef = useRef<PendingTask | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   async function executeTask(task: PendingTask, reset: boolean, resume: boolean): Promise<void> {
     setExecutionStatus('running');
     setErrorMessage(null);
     setPendingReset(false);
     setProgressEntries(current => getProgressForExecution(current, resume));
-    await runTask(task, reset, resume, locale, {
+    await runTask(task, reset, resume, sessionIdRef.current, locale, {
       onActivity: event => {
         if (event.type === 'usage') task.usageEvents.push(event);
         setProgressEntries(current => [...current, { id: crypto.randomUUID(), ...event }]);
       },
       onError: error => failTask(error),
-      onPause: () => pauseTask(task),
+      onPause: pausedSessionId => pauseTask(task, pausedSessionId),
       onSuccess: result => completeTask(task, result),
     });
   }
 
-  function pauseTask(task: PendingTask): void {
+  function pauseTask(task: PendingTask, sessionId?: string): void {
+    if (sessionId) sessionIdRef.current = sessionId;
     pendingTaskRef.current = task;
     setConversation(current => pauseConversation(current, task, locale));
     setExecutionStatus('paused');
   }
 
   function completeTask(task: PendingTask, result: CompletedDistillResponse): void {
+    sessionIdRef.current = result.sessionId;
     setConversation(current => completeConversation(current, task, result, locale));
     pendingTaskRef.current = null;
     setExecutionStatus('idle');
@@ -242,9 +273,9 @@ export function useDistillSession(locale: Locale): DistillSessionState {
     setExecutionStatus('idle');
   }
 
-  async function submitText(text: string): Promise<void> {
+  async function submitText(text: string, attachments: readonly DistillAttachment[] = []): Promise<void> {
     const turnIndex = getUserTurnIndex(conversation.entries);
-    const task = createPendingTask(text, turnIndex);
+    const task = createPendingTask(text, attachments, turnIndex);
     await executeTask(task, pendingReset, false);
   }
 
@@ -260,10 +291,12 @@ export function useDistillSession(locale: Locale): DistillSessionState {
     setPendingReset(true);
     setProgressEntries([]);
     pendingTaskRef.current = null;
+    sessionIdRef.current = null;
     setExecutionStatus('idle');
   }
 
   function loadSession(session: SessionHistoryItem): void {
+    sessionIdRef.current = session.id;
     setConversation(createConversationFromHistory(session, locale));
     setErrorMessage(null);
     setPendingReset(false);

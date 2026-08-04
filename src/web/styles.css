@@ -353,8 +353,85 @@ summary:focus-visible {
 }
 
 .composer-form {
+  display: grid;
+  gap: 10px;
   border-top: 1px solid var(--line);
   padding: 16px 20px 20px;
+}
+
+.composer-attachments {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.attachment-button {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  display: inline-flex;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.attachment-button:hover {
+  background: var(--green-soft);
+  border-color: rgba(23, 107, 82, 0.25);
+  color: var(--green);
+}
+
+.attachment-button:disabled,
+.attachment-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.attachment-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-pill {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+}
+
+.attachment-pill span {
+  font-size: 0.78rem;
+}
+
+.attachment-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  display: inline-flex;
+  justify-content: center;
+  padding: 0;
+}
+
+.attachment-remove:hover {
+  color: var(--danger);
+}
+
+.composer-error {
+  color: var(--danger);
+  font-size: 0.82rem;
+  margin: 0;
 }
 
 .composer-input-wrap {

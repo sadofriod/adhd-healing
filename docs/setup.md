@@ -10,6 +10,7 @@
 | Obsidian desktop app + CLI | Latest | Enable Command line interface in Obsidian and register `obsidian` in PATH; the app must be running for CLI calls |
 | DeepSeek API Key | — | [platform.deepseek.com](https://platform.deepseek.com) |
 | Obsidian MCP Server | `@smith-and-web/obsidian-mcp-server@1.4.0` | Direct filesystem access; Obsidian does not need to stay open |
+| Filesystem MCP Server | `@modelcontextprotocol/server-filesystem@2026.7.10` | Read-only local file access through an explicit allowlist |
 
 ## 1. Configure environment
 
@@ -24,6 +25,7 @@ BRAIN_VAULT_PATH=/absolute/path/to/your/vault
 DEEPSEEK_API_KEY=sk-...
 GITHUB_PERSONAL_ACCESS_TOKEN=github_pat_...
 PORT=5001
+MCP_FILESYSTEM_ALLOWED_DIRS=["/absolute/path/to/extra/dir"]
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
 OBSIDIAN_WRITE_BACKEND=cli
@@ -43,6 +45,11 @@ registered, startup now fails fast with a link to the official Obsidian CLI setu
 page instead of silently falling back to MCP.
 The default [MCP configuration](../mcp.json) connects to `http://localhost:3001/sse`
 and retains the read-only GitHub MCP server for repository context.
+The same startup path also loads the official filesystem MCP package and only
+exposes read-only file tools. Access is limited to an allowlist: the vault path plus
+any extra absolute directories configured via `MCP_FILESYSTEM_ALLOWED_DIRS`.
+Session history is stored in SQLite. If `DATABASE_URL` is unset, the runtime uses
+`data/sessions.db` inside the repository.
 
 Expected startup output:
 
@@ -68,38 +75,15 @@ into the Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. Each note cont
 YAML properties, the full report, `[[wiki-links]]`, the original input, and the
 conversation transcript.
 
-## 5. iPhone Shortcuts Setup（快捷指令配置）
+## 5. Access Modes
 
-Name the shortcut: `🧠 智能脑暴`
+Choose the entry point that best fits your workflow:
 
-Steps:
+1. **Terminal CLI**: run `pnpm run start:cli` for a host-native loop with session switching and resume commands.
+2. **Web workspace**: open `http://localhost:5001/` for the built-in browser UI with timeline, progress, and history panels.
+3. **External automation client**: call `POST /distill` directly from any script, launcher, or automation tool that can send JSON.
 
-1. **Receive input**: Tap ⓘ at the bottom, enable accepting "Shortcut Input".
-2. **Text action**: Insert a Text action and select the magic variable "Shortcut Input".
-3. **If** — If the Text above has no value:
-   - **Set variable** `SiriSays` = `"嗨，你现在有什么想法？"`
-   - **Set variable** `isReset` = `true`
-4. **Otherwise**:
-   - **Set variable** `SiriSays` = Shortcut Input
-   - **Set variable** `isReset` = `false`
-5. **End If**
-6. **Dictate Text**: Set the prompt to variable `SiriSays`. (Siri will speak the question, then open the mic.)
-7. **Get Contents of URL**:
-   - URL: `http://<your-mac-ip>:5001/distill`
-   - Method: POST / Request Body: JSON
-   - Key 1: `text` → Dictated Text
-   - Key 2: `reset` → variable `isReset`
-8. **Get Dictionary from Input** → pass the URL contents.
-9. **Get Dictionary Value** → key `status` → store as `currentStatus`.
-10. **Get Dictionary Value** → key `text` → store as `serverReply`.
-11. **If** `currentStatus` equals `CONTINUE`:
-    - **Run Shortcut**: Select `🧠 智能脑暴` (itself!), pass `serverReply` as input.
-12. **Otherwise** (FINISH):
-    - **Show Alert**: display `serverReply` (a concise Obsidian archive confirmation).
-13. **End If**
-
-> The recursive self-call avoids the iOS Shortcuts loop-crash bug and naturally handles multi-turn conversation.  
-> If the model needs fresh external context during clarification, the server may call Google / DuckDuckGo / Bing behind the scenes before returning the next question or final answer.
+The repository no longer maintains platform-specific client scripts. External clients should stay thin and delegate workflow state to the gateway via `sessionId`, `reset`, and `resume`.
 
 ## 6. Verify end-to-end
 
@@ -107,7 +91,8 @@ Steps:
 |---|---|
 | Server running | `curl http://localhost:5001/` |
 | MCP server running | `curl http://localhost:3001/health` |
-| Distill works | `curl -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"text":"测试想法","reset":true}'` |
+| Distill works | `curl -N -X POST http://localhost:5001/distill -H 'Content-Type: application/json' -d '{"text":"测试想法","reset":true}'` |
+| Session history works | `curl http://localhost:5001/sessions` |
 | Vault file created | `ls "$BRAIN_VAULT_PATH/$OBSIDIAN_NOTE_FOLDER"` |
 | Reminder added | Open Reminders app on Mac |
 
@@ -118,7 +103,14 @@ Steps:
 | `Invalid environment variables` | `.env` missing `DEEPSEEK_API_KEY` or `BRAIN_VAULT_PATH` |
 | CLI not found | Obsidian CLI is not installed, not registered in PATH, or Obsidian is not running |
 | MCP connection failure on startup | Obsidian MCP Server is not listening on port `3001` |
+| Filesystem MCP not available | `MCP_FILESYSTEM_ALLOWED_DIRS` is empty and you want local file access outside the vault |
 | `MCP tool is unavailable` | `OBSIDIAN_MCP_WRITE_TOOL` does not match the prefixed MCP tool name |
 | `400` from `/distill` | `text` field missing or empty |
 | `[reminders] Error syncing reminder` | macOS Automation permission not granted |
 | DeepSeek API error | Invalid API key or rate limit |
+
+## 8. Deployment Stance
+
+For the current local-first workflow, SQLite is enough and a full Dockerized app stack is not the default recommendation. The runtime depends on host-native macOS integrations such as Apple Reminders automation, local Vault paths, and the Obsidian CLI, so Docker would add operational indirection without simplifying the main use case.
+
+Docker remains relevant only for the optional GitHub MCP server defined in [mcp.json](../mcp.json). If the project later needs remote hosting, contributor onboarding without macOS-specific tooling, or multi-user operation, that is the right time to introduce Docker Compose.

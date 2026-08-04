@@ -2,23 +2,24 @@
 
 [中文说明](./README.zh-CN.md)
 
-Obsidian-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report through an Obsidian MCP server and sends only a concise action reference to Apple Reminders.
+Obsidian-first idea clarification and distillation gateway for a single-user, Mac-hosted workflow. The built-in terminal CLI and React web workspace share the same streaming API, and any HTTP-capable automation client can integrate with that contract. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report through an Obsidian MCP server and sends only a concise action reference to Apple Reminders.
 
-The system now supports a pure terminal CLI mode, so you can run full clarification loops without opening the web UI.
+The system now supports persistent session history in SQLite, so you can pause, resume, switch sessions, and keep working without relying on a browser-only flow.
 
 ## What It Does
 
-- Accepts `POST /distill` with `{ text, reset }` and returns `{ status: "CONTINUE" | "FINISH", text }`.
-- Manages multi-turn conversation state in memory on the server (single-user, single-session).
+- Accepts `POST /distill` with `{ text, reset, resume, sessionId, attachments }` and streams NDJSON progress plus final result events.
+- Persists session history in SQLite through Prisma and lets clients resume or switch work by `sessionId`.
 - Uses DeepSeek (`deepseek-chat`) via the Vercel AI SDK for structured decision-making.
 - Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
 - Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser search and read-only MCP tools.
 - Writes YAML and semantic wiki-link networks through an Obsidian persistence layer for Graph View.
 - Uses Obsidian CLI as the primary write path and fails fast with install guidance if the CLI is missing.
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
+- Adds a read-only filesystem MCP for local file access using the official `@modelcontextprotocol/server-filesystem` package.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
-- Serves a debug React web client at `/`.
-- Supports a pure terminal CLI mode with built-in session controls: new session, continue paused turn, list history, and switch history session.
+- Serves a React web workspace at `/` with conversation timeline, progress, and session history panels.
+- Supports a terminal CLI with built-in session controls: new session, continue paused turn, list history, and switch history session.
 - Supports Chinese/English localization in both the web UI and server-generated API error messages (`x-locale` / `accept-language`).
 
 ## Platform Scope
@@ -26,23 +27,23 @@ The system now supports a pure terminal CLI mode, so you can run full clarificat
 This repository is intentionally local-first and macOS-hosted.
 
 - Host: macOS
-- Primary client: iPhone Shortcuts (see setup guide)
-- Debug client: Safari/Chrome web browser at `http://localhost:5001`
+- Built-in clients: terminal CLI and browser at `http://localhost:5001`
+- External clients: any HTTP-capable automation client that can call `/distill`
 - Reminders sync: AppleScript / `osascript`
 
 ## Architecture
 
 ```
-[iPhone Shortcuts] ──(POST { text, reset })──► [Mac Gateway (Bun)]
-       ▲                                              │
-      │                                     generateText → DeepSeek API
-       │                                              │
-       │                                    ASK_MORE → append to session
-       └────(CONTINUE: next question)────────┤
-                                             │
-                                    COMPLETE → parallel research agents
-                                             → artifact bundle + Reminders
-       └────(FINISH: concise confirmation)───┘
+[CLI / Web / Automation Client] ──(POST /distill)──► [Mac Gateway (Bun)]
+     ▲                                                  │
+     │                                       stream progress + result
+     │                                                  │
+     │                               DeepSeek + search + research agents
+     │                                                  │
+     └────(reuse sessionId or /sessions)──── CONTINUE / PAUSED
+                     │
+                 FINISH → Obsidian bundle
+                   → Apple Reminders
 ```
 
 ## Stack
@@ -52,6 +53,7 @@ This repository is intentionally local-first and macOS-hosted.
 - LLM: DeepSeek API (`deepseek-chat`) via Vercel AI SDK (`@ai-sdk/openai`)
 - Search: browser search tool (Google / DuckDuckGo / Bing)
 - Knowledge persistence: Obsidian CLI or MCP over SSE
+- Local file reading: official read-only filesystem MCP with explicit allowlist
 - Validation: Zod
 - Debug client: React web app
 
@@ -84,6 +86,7 @@ Optional:
 ```env
 PORT=5001
 MCP_CONFIG_PATH=/absolute/path/to/mcp.json
+MCP_FILESYSTEM_ALLOWED_DIRS=["/absolute/path/to/extra/dir"]
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
 OBSIDIAN_WRITE_BACKEND=cli
@@ -104,30 +107,33 @@ the Vault root for generated reports. When `OBSIDIAN_WRITE_BACKEND=auto`, the se
 uses the configured Obsidian CLI command and now fails fast with install guidance if
 that command is unavailable. Set `OBSIDIAN_WRITE_BACKEND=mcp` only if you explicitly
 want MCP writes instead of CLI writes. Stopping the command shuts down both processes.
+The same startup path also loads the official filesystem MCP server and exposes only
+read-only tools to the model. Read access is limited to an explicit allowlist: the vault
+path plus any extra absolute directories configured via `MCP_FILESYSTEM_ALLOWED_DIRS`.
+Session history is stored in SQLite. If `DATABASE_URL` is unset, the runtime falls back
+to `data/sessions.db` in the repository.
 
 ### 4. Verify the endpoint
 
 ```bash
-# Start a new session
-curl -X POST http://localhost:5001/distill \
+# Start a new session and print the NDJSON stream
+curl -N -X POST http://localhost:5001/distill \
   -H 'Content-Type: application/json' \
   -d '{"text":"我想做一个用 AI 帮助记忆闪念的工具","reset":true}'
 
-# Continue the conversation (use text from previous response)
-curl -X POST http://localhost:5001/distill \
+# List persisted sessions
+curl http://localhost:5001/sessions
+
+# Continue a specific session
+curl -N -X POST http://localhost:5001/distill \
   -H 'Content-Type: application/json' \
-  -d '{"text":"核心是语音输入，然后自动结构化存到 Obsidian","reset":false}'
+  -d '{"text":"核心是语音输入，然后自动结构化存到 Obsidian","sessionId":"<session-id>"}'
 ```
 
-### 5. iPhone Shortcut setup
+Each `/distill` response is streamed as newline-delimited JSON. The final line is a
+`result` event containing `status`, `sessionId`, and the user-facing text.
 
-See [docs/setup.md](./docs/setup.md) for the full iPhone Shortcuts configuration (recursive self-call pattern).
-
-### 6. Debug web client
-
-Open `http://localhost:5001/` in a browser. The web client sends text turns to the same `/distill` endpoint.
-
-### 7. Pure terminal CLI mode
+### 5. Built-in terminal CLI
 
 ```bash
 pnpm run start:cli
@@ -150,6 +156,18 @@ Interactive commands inside CLI:
 - `/help` show command help
 - `/exit` exit CLI mode
 
+### 6. Web workspace
+
+Open `http://localhost:5001/` in a browser. The web workspace talks to the same
+`/distill` and `/sessions` endpoints, shows progress events, and lets you reopen
+session history from the UI.
+
+### 7. External clients
+
+Any HTTP-capable automation client can call the same API. The repository no longer
+maintains platform-specific client recipes; client integrations should stay thin and
+delegate workflow state to the gateway.
+
 ### 8. Obsidian archive
 
 Each finished conversation creates a timestamped artifact directory under the
@@ -168,55 +186,111 @@ finalization request.
 The default [MCP configuration](./mcp.json) keeps both integrations:
 
 - GitHub MCP runs through Docker with read-only `repos`, `issues`, and `pull_requests` tools exposed to the clarification agent.
+- Filesystem MCP runs through the official `@modelcontextprotocol/server-filesystem` package and exposes only read-only local file tools.
 - Obsidian MCP connects over SSE and is called directly by the final persistence pipeline.
+
+## Deployment Stance
+
+The current runtime target is host-native macOS plus SQLite, not a full Dockerized app
+stack. That is intentional: the service depends on local Vault paths, the Obsidian CLI,
+and Apple Reminders automation, all of which are simpler and more reliable on the host
+than inside a container. SQLite is sufficient for the current single-user, local-first
+workflow, while Docker remains optional only for the read-only GitHub MCP server defined
+in `mcp.json`. Revisit Docker Compose when remote deployment, contributor onboarding
+without macOS-specific tooling, or multi-user hosting becomes the dominant need.
 
 ## API
 
-### Request
+### `POST /distill`
 
-`POST /distill` — `Content-Type: application/json`
+Request body (`Content-Type: application/json`):
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `text` | string | yes | Non-empty user input |
-| `reset` | boolean | no | `true` starts a fresh session (default: `false`) |
+| `reset` | boolean | no | `true` abandons the current active session and starts a fresh one |
+| `resume` | boolean | no | Retries a paused turn for the same `sessionId` |
+| `sessionId` | string | no | Binds the request to a persisted session |
+| `attachments` | array | no | Optional inline file payloads `{ name, content, mimeType?, size }` |
 
-### Response
+Response: `application/x-ndjson; charset=utf-8`
+
+Each line is a standalone JSON event. During execution the gateway may emit progress and
+usage events before the final `result` event.
 
 ```json
-{ "status": "CONTINUE", "text": "核心痛点到底是什么？" }
+{ "type": "progress", "phase": "process", "message": "Clarifying scope" }
 ```
 
 ```json
-{ "status": "FINISH", "text": "## 20分钟 Milestone\n..." }
+{
+  "type": "result",
+  "result": {
+    "status": "CONTINUE",
+    "sessionId": "session-1",
+    "text": "核心痛点到底是什么？"
+  }
+}
 ```
+
+```json
+{
+  "type": "result",
+  "result": {
+    "status": "FINISH",
+    "sessionId": "session-1",
+    "text": "## 20-minute Milestone\n...",
+    "tokenUsage": {
+      "inputTokens": 1200,
+      "outputTokens": 300,
+      "totalTokens": 1500
+    }
+  }
+}
+```
+
+Recoverable network failures are returned as a `PAUSED` result so clients can resume the
+same turn later with `resume: true`.
+
+### Session history endpoints
+
+- `GET /sessions` returns persisted session summaries.
+- `POST /sessions/:id/activate` marks a session active so the CLI or web UI can continue it.
 
 ### Error behavior
 
-- `400`: invalid payload
-- `500`: unhandled processing, research, or persistence failure
+- `400`: invalid JSON or validation failure before streaming starts
+- `500`: request setup failure before streaming starts
+- `type: "error"` event: unhandled processing, research, or persistence failure during the stream
 
 ## Development
 
 ```bash
+pnpm run build:web
 pnpm test
 pnpm lint
 pnpm exec tsc --noEmit
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, review expectations, and project conventions. GitHub Actions now runs install, lint, typecheck, test, and web build checks on every push and pull request.
 
 ## Repository Layout
 
 ```text
 .
 ├── docs/                  Product docs and setup guides
+├── prisma/                SQLite schema and migrations
 ├── public/                HTML shell and built frontend assets
 ├── scripts/cli.ts         Pure terminal CLI entrypoint
 ├── src/config/            Environment parsing
 ├── src/cli/               CLI loop, command parsing, and terminal I/O
-├── src/routes/distill/    Request validation and orchestration
-├── src/services/          LLM client, session, vault, reminders
+├── src/routes/distill/    Request validation, streaming, and orchestration
+├── src/routes/sessions.ts Session history and activation endpoints
+├── src/services/          LLM client, session, vault, reminders, and MCP
 ├── src/utils/             Context and markdown helpers
-├── src/web/               React debug client
+├── src/web/               React workspace client
 ├── server.ts              Bun HTTP entrypoint
 └── README.zh-CN.md        Chinese README
 ```

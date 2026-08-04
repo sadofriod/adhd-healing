@@ -8,6 +8,7 @@ import { getRequestLocale } from '../../i18n/locale';
 import { isRecoverableNetworkError } from '../../services/network-error';
 import { validateDistillRequest, ValidationError } from './validate';
 import { processDistill } from './process';
+import { getCurrentSessionId, runWithSessionContext } from '../../services/session';
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
@@ -89,7 +90,14 @@ async function streamDistill(
     const message = getErrorMessage(error);
     if (isRecoverableNetworkError(error)) {
       console.warn(`[distill:${requestId}] Paused after network failure (${Date.now() - startedAt}ms)`, error);
-      writer.writeEvent({ type: 'result', result: { status: 'PAUSED', text: message } });
+      writer.writeEvent({
+        type: 'result',
+        result: {
+          status: 'PAUSED',
+          sessionId: getCurrentSessionId() ?? requestId,
+          text: message,
+        },
+      });
     } else {
       console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
       writer.writeEvent({ type: 'error', error: message });
@@ -138,22 +146,24 @@ function createProductionStreamResponse(
 }
 
 export async function handleDistill(req: Request): Promise<Response> {
-  const requestId = crypto.randomUUID();
-  const startedAt = Date.now();
-  const locale = getRequestLocale(req);
+  return runWithSessionContext(async () => {
+    const requestId = crypto.randomUUID();
+    const startedAt = Date.now();
+    const locale = getRequestLocale(req);
 
-  console.info(`[distill:${requestId}] Request started`);
+    console.info(`[distill:${requestId}] Request started`);
 
-  try {
-    const reqData = await validateDistillRequest(req, locale);
-    return createProductionStreamResponse(reqData, requestId, startedAt);
-  } catch (error) {
-    const handledResponse = getHandledErrorResponse(error);
-    if (handledResponse) {
-      console.warn(`[distill:${requestId}] Validation error: ${getErrorMessage(error)}`);
-      return handledResponse;
+    try {
+      const reqData = await validateDistillRequest(req, locale);
+      return createProductionStreamResponse(reqData, requestId, startedAt);
+    } catch (error) {
+      const handledResponse = getHandledErrorResponse(error);
+      if (handledResponse) {
+        console.warn(`[distill:${requestId}] Validation error: ${getErrorMessage(error)}`);
+        return handledResponse;
+      }
+      console.error(`[distill:${requestId}] Request setup error`, error);
+      return errorResponse(500, getErrorMessage(error));
     }
-    console.error(`[distill:${requestId}] Request setup error`, error);
-    return errorResponse(500, getErrorMessage(error));
-  }
+  });
 }

@@ -11,14 +11,14 @@
 
 ## 2. 一句话定义
 
-用户通过 iPhone 快捷指令或 React 调试网页提交文本，DeepSeek 通过多轮单点追问帮助用户澄清想法；完成后，系统生成 Markdown，写入本地主 Vault 和分类归档，并尝试把里程碑同步到 Apple Reminders。
+用户通过终端 CLI、React 网页或其他 HTTP 客户端提交文本，DeepSeek 通过多轮单点追问帮助用户澄清想法；完成后，系统生成 Markdown，写入本地主 Vault 和分类归档，并尝试把里程碑同步到 Apple Reminders。
 
 ## 3. 目标与成功标准
 
 ### 3.1 产品目标
 
 1. 验证多轮主动澄清是否比一次性摘要更能形成可执行结果。
-2. 让 iPhone 快捷指令保持简单，只处理文本输入和 `CONTINUE` / `FINISH` 状态。
+2. 让外部客户端保持简单，把会话状态与流程控制收敛到网关内部。
 3. 把完成的结果沉淀为可被 Obsidian 等工具读取的本地 Markdown。
 4. 把结果中的里程碑接入 Apple Reminders，形成行动出口。
 
@@ -28,7 +28,7 @@
 2. 每轮返回一个澄清问题或最终 Markdown。
 3. 完成后同时产生主 Vault 文件和 `.local-vault` 分类归档，并重建归档索引。
 4. 存在里程碑时尝试创建提醒；提醒失败不影响主响应。
-5. React 网页可展示对话时间线和最终结果。
+5. React 网页与终端 CLI 均可继续历史会话，并展示当前执行状态。
 
 ## 4. 当前范围
 
@@ -36,22 +36,22 @@
 
 | 模块 | 当前能力 |
 | --- | --- |
-| 输入入口 | iPhone 快捷指令为主要入口；React 网页为文本调试入口 |
-| API | `POST /distill` 接收 JSON `{ text, reset }` |
-| 会话 | 服务端维护单个进程级内存会话 |
+| 输入入口 | 内置终端 CLI、React 网页，以及任何可调用 HTTP API 的外部客户端 |
+| API | `POST /distill` 接收 JSON 请求并流式返回 NDJSON；另提供 `GET /sessions` 与 `POST /sessions/:id/activate` |
+| 会话 | Prisma + SQLite 持久化会话历史，可按 `sessionId` 继续和切换 |
 | 模型 | DeepSeek `deepseek-chat`，通过 Vercel AI SDK 调用 |
 | 澄清 | LLM 在继续追问与最终输出之间做结构化决策 |
 | 外部信息 | LLM 可按需调用 Google、DuckDuckGo 或 Bing 浏览器搜索 |
 | 主 Vault | 最终 Markdown、YAML Front Matter 和用户原始输入写入 `BRAIN_VAULT_PATH` |
 | 本地归档 | 写入 `.local-vault/<一级分类>/<二级分类>/` 并重建 `index.md` |
 | 行动同步 | 通过 `osascript` 写入 Apple Reminders；失败降级为日志 |
-| 调试网页 | 文本提交、追问时间线、新会话和最终 Markdown 展示 |
+| 调试网页 | 文本提交、执行进度、历史会话、新会话、恢复暂停任务和最终 Markdown 展示 |
 
 ### 4.2 当前不包含
 
 1. 浏览器录音、音频上传和服务端语音转写。
 2. PostgreSQL、pgvector、embedding 或跨会话语义检索。
-3. `session_id`、并行会话、多人账户或云端会话同步。
+3. 多人账户、跨设备权限控制或云端会话同步。
 4. 原始音频归档、管理后台和知识聚类。
 5. 本地 LM Studio 模型。
 
@@ -59,22 +59,22 @@
 
 ```mermaid
 flowchart LR
-    A[iPhone 快捷指令或 React 网页] --> B[POST /distill]
+  A[CLI / React 网页 / 外部 HTTP 客户端] --> B[POST /distill]
     B --> C{reset=true?}
-    C -->|是| D[清空内存会话]
-    C -->|否| E[沿用当前内存会话]
+  C -->|是| D[放弃当前激活会话并新建 Session]
+  C -->|否| E[沿用当前或指定 sessionId]
     D --> F[追加用户文本]
     E --> F
     F --> G[DeepSeek 判断]
     G -->|需要公开资料| H[浏览器搜索]
     H --> G
-    G -->|继续澄清| I[返回 CONTINUE 和问题]
+  G -->|继续澄清| I[返回 CONTINUE 和问题]
     I --> A
     G -->|完成| J[生成 Markdown 与归档分类]
     J --> K[写主 Vault]
     K --> L[写 .local-vault 并重建索引]
     L --> M[尝试写 Apple Reminders]
-    M --> N[清空会话并返回 FINISH]
+  M --> N[标记完成并返回 FINISH]
 ```
 
 ## 6. 功能需求
@@ -94,15 +94,16 @@ flowchart LR
 
 | 编号 | 需求 |
 | --- | --- |
-| MVP-FR-101 | 提供 `POST /distill`，仅接收 JSON 文本请求 |
+| MVP-FR-101 | 提供 `POST /distill`，接收 JSON 请求并以 NDJSON 流返回结果 |
 | MVP-FR-102 | `text` 必须为去除首尾空白后的非空字符串 |
-| MVP-FR-103 | `reset` 为可选布尔值，默认 `false` |
-| MVP-FR-104 | `reset=true` 时先清空当前会话，再追加本次输入 |
-| MVP-FR-105 | 成功响应固定为 `{ status, text }` |
-| MVP-FR-106 | `status` 只能为 `CONTINUE` 或 `FINISH` |
+| MVP-FR-103 | `reset`、`resume`、`sessionId` 和 `attachments` 为可选字段 |
+| MVP-FR-104 | `reset=true` 时放弃当前激活会话并开启新会话 |
+| MVP-FR-105 | 成功流的最终 `result` 事件必须包含 `{ status, sessionId, text }` |
+| MVP-FR-106 | `status` 只能为 `CONTINUE`、`PAUSED` 或 `FINISH` |
 | MVP-FR-107 | 请求校验失败返回 `400` 和 `{ error }` |
-| MVP-FR-108 | 未处理异常返回 `500` 和 `{ error }` |
-| MVP-FR-109 | 最终完成后清空内存会话 |
+| MVP-FR-108 | 流启动前未处理异常返回 `500` 和 `{ error }`；流中异常返回 `type: "error"` 事件 |
+| MVP-FR-109 | 系统必须为每轮会话分配并持久化 `sessionId` |
+| MVP-FR-110 | 提供 `GET /sessions` 与 `POST /sessions/:id/activate` 供客户端恢复历史会话 |
 
 ### 6.3 澄清与搜索
 
@@ -144,32 +145,66 @@ flowchart LR
 ```json
 {
   "text": "我想做一个帮助记录灵感的工具",
-  "reset": true
+  "reset": true,
+  "resume": false,
+  "sessionId": "optional-session-id"
 }
 ```
 
-### 7.2 继续追问
+### 7.2 事件流
+
+```json
+{ "type": "progress", "phase": "process", "message": "正在收敛问题范围" }
+```
+
+### 7.3 继续追问结果
 
 ```json
 {
-  "status": "CONTINUE",
-  "text": "你最希望它先解决记录、整理还是执行的问题？"
+  "type": "result",
+  "result": {
+    "status": "CONTINUE",
+    "sessionId": "session-1",
+    "text": "你最希望它先解决记录、整理还是执行的问题？"
+  }
 }
 ```
 
-### 7.3 完成
+### 7.4 暂停结果
 
 ```json
 {
-  "status": "FINISH",
-  "text": "## 今日灵感内核\n..."
+  "type": "result",
+  "result": {
+    "status": "PAUSED",
+    "sessionId": "session-1",
+    "text": "fetch failed"
+  }
+}
+```
+
+### 7.5 完成结果
+
+```json
+{
+  "type": "result",
+  "result": {
+    "status": "FINISH",
+    "sessionId": "session-1",
+    "text": "## 今日灵感内核\n...",
+    "tokenUsage": {
+      "inputTokens": 1200,
+      "outputTokens": 300,
+      "totalTokens": 1500
+    }
+  }
 }
 ```
 
 ## 8. 约束与风险
 
-1. 会话是服务端全局内存状态，多个客户端会共享并可能互相干扰。
-2. 服务重启会丢失未完成会话；浏览器刷新不会主动清空服务端会话。
+1. 当前仍是本地单用户模型，没有账户系统、鉴权和多租户隔离。
+2. 浏览器刷新会丢失当前页面状态，但历史会话仍需通过 `/sessions` 手动重新激活。
 3. 主 Vault 或归档写入失败会使完成请求返回 `500`。
 4. DeepSeek 与浏览器搜索依赖网络；搜索站点结构变化可能导致结果质量下降。
 5. Reminders 仅支持 macOS，且首次使用需要系统授权。
@@ -190,7 +225,7 @@ pnpm run build:web
 以下能力需要单独立项，不属于当前 MVP 契约：
 
 1. 音频输入与本地或云端 ASR。
-2. 持久会话 ID 与并发隔离。
+2. 多用户协作与远程访问控制。
 3. PostgreSQL/pgvector 历史语义检索。
 4. 本地模型和离线模式。
 5. 归档搜索 UI 与自动主题合并。

@@ -38,13 +38,22 @@ function parseResultText(value: unknown, locale: Locale): string {
   return value;
 }
 
+function parseSessionId(value: unknown, locale: Locale): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(getWebMessage(locale, 'streamInvalidRecord'));
+  }
+  return value;
+}
+
 function parseResult(value: Record<string, unknown>, locale: Locale): DistillApiResponse {
   const status = value.status;
   if (!isWorkflowStatus(status)) throw new Error(getWebMessage(locale, 'streamInvalidResultStatus'));
   const text = parseResultText(value.text, locale);
-  if (status !== 'FINISH') return { status, text };
+  const sessionId = parseSessionId(value.sessionId, locale);
+  if (status !== 'FINISH') return { status, sessionId, text };
   return {
     status,
+    sessionId,
     text,
     tokenUsage: parseTokenUsage(value.tokenUsage, locale),
   };
@@ -185,6 +194,26 @@ function getResponseBody(response: Response, locale: Locale): ReadableStream<Uin
   return response.body;
 }
 
+function createTextStream(response: Response, locale: Locale): ReadableStream<string> {
+  const decoder = new TextDecoder();
+  return getResponseBody(response, locale).pipeThrough(new TransformStream<Uint8Array, string>({
+    transform(chunk, controller) {
+      controller.enqueue(decoder.decode(chunk, { stream: true }));
+    },
+    flush(controller) {
+      const remainder = decoder.decode();
+      if (remainder) controller.enqueue(remainder);
+    },
+  }));
+}
+
+function createStreamReader(
+  response: Response,
+  locale: Locale
+): ReadableStreamDefaultReader<string> {
+  return createTextStream(response, locale).getReader();
+}
+
 export async function readDistillStream(
   response: Response,
   onActivity: ActivityHandler,
@@ -192,7 +221,7 @@ export async function readDistillStream(
 ): Promise<DistillApiResponse> {
   await assertResponseIsOk(response, locale);
 
-  const reader = getResponseBody(response, locale).pipeThrough(new TextDecoderStream()).getReader();
+  const reader = createStreamReader(response, locale);
   const state: StreamState = { result: null };
   const remainder = await readStreamChunks(reader, onActivity, state, locale);
   return finishStream(remainder, onActivity, state, locale);

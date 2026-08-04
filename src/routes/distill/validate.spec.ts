@@ -21,4 +21,34 @@ describe('validateDistillRequest i18n', () => {
 
     await expect(validateDistillRequest(request, 'en')).rejects.toThrow('text must be a non-empty string');
   });
+
+  test('accepts structured file attachments', async () => {
+    const request = new Request('http://localhost/distill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: 'Read the attached file',
+        attachments: [
+          {
+            name: 'notes.md',
+            content: '# hello',
+            mimeType: 'text/markdown',
+            size: 7,
+          },
+        ],
+      }),
+    });
+
+    await expect(validateDistillRequest(request)).resolves.toMatchObject({
+      text: 'Read the attached file',
+      attachments: [
+        {
+          name: 'notes.md',
+          content: '# hello',
+          mimeType: 'text/markdown',
+          size: 7,
+        },
+      ],
+    });
+  });
 });

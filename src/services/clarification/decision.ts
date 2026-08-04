@@ -30,49 +30,84 @@ export type DecisionParseResult =
   | LlmProgressDecision
   | LlmFinalDecisionDraft;
 
+type JsonExtractionState = {
+  readonly objects: string[];
+  depth: number;
+  start: number;
+  inString: boolean;
+  escaped: boolean;
+};
+
+function createJsonExtractionState(): JsonExtractionState {
+  return {
+    objects: [],
+    depth: 0,
+    start: -1,
+    inString: false,
+    escaped: false,
+  };
+}
+
+function consumeStringCharacter(state: JsonExtractionState, char: string): boolean {
+  if (!state.inString) return false;
+  if (state.escaped) {
+    state.escaped = false;
+    return true;
+  }
+  if (char === '\\') {
+    state.escaped = true;
+    return true;
+  }
+  if (char === '"') state.inString = false;
+  return true;
+}
+
+function openString(state: JsonExtractionState, char: string): boolean {
+  if (char !== '"') return false;
+  state.inString = true;
+  return true;
+}
+
+function openJsonObject(state: JsonExtractionState, char: string, index: number): boolean {
+  if (char !== '{') return false;
+  if (state.depth === 0) state.start = index;
+  state.depth += 1;
+  return true;
+}
+
+function closeJsonObject(
+  state: JsonExtractionState,
+  char: string,
+  index: number,
+  rawText: string
+): void {
+  if (char !== '}' || state.depth === 0) return;
+  state.depth -= 1;
+  if (state.depth !== 0 || state.start === -1) return;
+  state.objects.push(rawText.slice(state.start, index + 1));
+  state.start = -1;
+}
+
+function consumeJsonCharacter(
+  state: JsonExtractionState,
+  char: string,
+  index: number,
+  rawText: string
+): void {
+  if (consumeStringCharacter(state, char)) return;
+  if (openString(state, char)) return;
+  if (openJsonObject(state, char, index)) return;
+  closeJsonObject(state, char, index, rawText);
+}
+
 function extractJsonObjects(rawText: string): readonly string[] {
-  const objects: string[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
+  const state = createJsonExtractionState();
 
   for (let index = 0; index < rawText.length; index += 1) {
-    const char = rawText[index];
-    if (!char) continue;
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (char === '"') inString = false;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === '{') {
-      if (depth === 0) start = index;
-      depth += 1;
-      continue;
-    }
-
-    if (char !== '}' || depth === 0) continue;
-    depth -= 1;
-    if (depth !== 0 || start === -1) continue;
-    objects.push(rawText.slice(start, index + 1));
-    start = -1;
+    consumeJsonCharacter(state, rawText[index]!, index, rawText);
   }
 
-  return objects;
+  return state.objects;
 }
 
 function isClarificationRequest(message: string): boolean {

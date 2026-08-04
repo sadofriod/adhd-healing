@@ -1,10 +1,12 @@
 import { experimental_createMCPClient, type ToolSet } from 'ai';
 import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
+import { config as appConfig } from '../config/env';
 import {
   loadMcpConfig,
   resolveMcpEnvironment,
   type McpConfig,
 } from './mcpConfig';
+import { buildFilesystemServerConfig, filterFilesystemReadTools } from './filesystem-mcp';
 
 type McpClient = Awaited<ReturnType<typeof experimental_createMCPClient>>;
 
@@ -75,6 +77,21 @@ export function makeMcpToolsResilient(serverName: string, serverTools: ToolSet):
   return prefixTools(serverName, serverTools);
 }
 
+function getConfiguredServers(configuredServers: McpConfig['servers']): McpConfig['servers'] {
+  const filesystemServer = buildFilesystemServerConfig(appConfig.filesystemMcpAllowedDirs);
+  if (!filesystemServer) return configuredServers;
+
+  return {
+    ...configuredServers,
+    filesystem: filesystemServer,
+  };
+}
+
+function filterServerTools(serverName: string, serverTools: ToolSet): ToolSet {
+  if (serverName !== 'filesystem') return serverTools;
+  return filterFilesystemReadTools(serverTools);
+}
+
 async function connectServer(
   serverName: string,
   server: McpConfig['servers'][string]
@@ -96,7 +113,7 @@ async function connectServer(
     cwd: server.cwd,
   });
   const client = await experimental_createMCPClient({ name: `adhd-healing-${serverName}`, transport });
-  const serverTools = await client.tools();
+  const serverTools = filterServerTools(serverName, await client.tools());
   return buildServerConnection(serverName, client, serverTools, server.exposeToModel);
 }
 
@@ -139,8 +156,9 @@ function buildServerConnection(
 
 export async function initializeMcpServers(configPath: string): Promise<void> {
   const config = await loadMcpConfig(configPath);
+  const configuredServers = getConfiguredServers(config.servers);
   const connections = await Promise.all(
-    Object.entries(config.servers).map(([serverName, server]) => connectServer(serverName, server))
+    Object.entries(configuredServers).map(([serverName, server]) => connectServer(serverName, server))
   );
   clients = connections.map(connection => connection.client);
   tools = Object.assign({}, ...connections.map(connection => connection.tools));

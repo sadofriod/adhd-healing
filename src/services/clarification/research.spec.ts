@@ -43,6 +43,7 @@ describe('deep research parsing', () => {
     const prompt = getResearchSystemPrompt();
     expect(prompt).toContain('## 工作规则');
     expect(prompt).toContain('## 实施步骤');
+    expect(prompt).toContain('不向用户追问');
     expect(prompt).not.toContain('user-invocable:');
   });
 

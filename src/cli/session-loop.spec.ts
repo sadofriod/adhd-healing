@@ -62,7 +62,7 @@ describe('runSessionLoop', () => {
           activated.push(sessionId);
           return true;
         },
-        runDistill: async () => ({ status: 'CONTINUE', text: 'ignored' }),
+        runDistill: async () => ({ status: 'CONTINUE', sessionId: 'session-2', text: 'ignored' }),
       }
     );
 
@@ -82,15 +82,15 @@ describe('runSessionLoop', () => {
         activateSession: async () => true,
         runDistill: async (request: DistillRequest, _report: LlmActivityReporter) => {
           calls.push(request);
-          if (request.resume) return { status: 'CONTINUE', text: 'resumed' };
-          return { status: 'PAUSED', text: 'network interrupted' };
+          if (request.resume) return { status: 'CONTINUE', sessionId: 'session-3', text: 'resumed' };
+          return { status: 'PAUSED', sessionId: 'session-3', text: 'network interrupted' };
         },
       }
     );
 
     expect(calls).toEqual([
       { text: 'first ask', reset: false },
-      { text: 'first ask', reset: false, resume: true },
+      { text: 'first ask', reset: false, resume: true, sessionId: 'session-3' },
     ]);
   });
 
@@ -106,7 +106,7 @@ describe('runSessionLoop', () => {
         },
         listSessionHistory: async () => [],
         activateSession: async () => true,
-        runDistill: async () => ({ status: 'CONTINUE', text: 'ok' }),
+        runDistill: async () => ({ status: 'CONTINUE', sessionId: 'session-4', text: 'ok' }),
       }
     );
 

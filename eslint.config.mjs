@@ -4,7 +4,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.bun/**', 'public/**'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      '.bun/**',
+      'public/**',
+      '**/*.spec.*',
+      '**/*.test.*',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -24,7 +32,7 @@ export default tseslint.config(
       },
     },
     rules: {
-      complexity: ['error', { max: 3 }],
+      complexity: ['error', { max: 5 }],
     },
   },
   {

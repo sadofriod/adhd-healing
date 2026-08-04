@@ -15,6 +15,7 @@ export type FinalizeWriteResult = {
 };
 
 export async function runFinalizeWritePipeline(opts: {
+  sessionId: string;
   title: string;
   markdown: string;
   milestone: string;
@@ -25,6 +26,7 @@ export async function runFinalizeWritePipeline(opts: {
   tokenUsage: LlmTokenUsage;
 }): Promise<FinalizeWriteResult> {
   const {
+    sessionId,
     title,
     markdown,
     milestone,
@@ -36,6 +38,7 @@ export async function runFinalizeWritePipeline(opts: {
   } = opts;
 
   const bundle = await saveObsidianArtifactBundle({
+    sessionId,
     title,
     markdown: [
       markdown,
