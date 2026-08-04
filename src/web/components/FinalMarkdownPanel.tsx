@@ -1,8 +1,11 @@
 import type { JSX } from 'react';
+import type { Locale } from '../../i18n/locale';
 import type { LlmTokenUsage } from '../../types';
+import { getWebMessage } from '../i18n/messages';
 
 type FinalMarkdownPanelProps = {
   readonly finalText: string | null;
+  readonly locale: Locale;
   readonly tokenUsage: LlmTokenUsage | null;
 };
 
@@ -11,19 +14,20 @@ function getCardClassName(hasResult: boolean): string {
   return 'panel-surface result-card result-card-empty';
 }
 
-function getStatusLabel(hasResult: boolean): string {
-  if (hasResult) return 'ready';
-  return 'waiting';
+function getStatusLabel(hasResult: boolean, locale: Locale): string {
+  if (hasResult) return getWebMessage(locale, 'finalStatusReady');
+  return getWebMessage(locale, 'finalStatusWaiting');
 }
 
 function ResultContent(props: {
   readonly finalText: string;
+  readonly locale: Locale;
   readonly tokenUsage: LlmTokenUsage;
 }): JSX.Element {
   return (
     <>
       <div className="final-token-summary">
-        <strong>本轮总消耗</strong>
+        <strong>{getWebMessage(props.locale, 'finalUsageTitle')}</strong>
         <span>input {props.tokenUsage.inputTokens.toLocaleString()}</span>
         <span>output {props.tokenUsage.outputTokens.toLocaleString()}</span>
         <span>total {props.tokenUsage.totalTokens.toLocaleString()} tokens</span>
@@ -33,10 +37,10 @@ function ResultContent(props: {
   );
 }
 
-function EmptyContent(): JSX.Element {
+function EmptyContent(props: { readonly locale: Locale }): JSX.Element {
   return (
     <p className="result-placeholder">
-      完成多轮澄清后，最终结果会在这里展开，方便直接复制到你的知识库里。
+      {getWebMessage(props.locale, 'finalPlaceholder')}
     </p>
   );
 }
@@ -49,13 +53,13 @@ export function FinalMarkdownPanel(props: FinalMarkdownPanelProps): JSX.Element 
       <div className="panel-heading">
         <div>
           <p className="section-kicker">Final output</p>
-          <h2>蒸馏结果</h2>
+          <h2>{getWebMessage(props.locale, 'finalResultTitle')}</h2>
         </div>
-        <span className="status-pill">{getStatusLabel(hasResult)}</span>
+        <span className="status-pill">{getStatusLabel(hasResult, props.locale)}</span>
       </div>
       {hasResult
-        ? <ResultContent finalText={props.finalText} tokenUsage={props.tokenUsage} />
-        : <EmptyContent />}
+        ? <ResultContent finalText={props.finalText} locale={props.locale} tokenUsage={props.tokenUsage} />
+        : <EmptyContent locale={props.locale} />}
     </section>
   );
 }

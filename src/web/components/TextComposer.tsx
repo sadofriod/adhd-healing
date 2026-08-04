@@ -1,9 +1,12 @@
 import type { FormEvent, JSX } from 'react';
 import { useState } from 'react';
 import { ArrowUp } from 'lucide-react';
+import type { Locale } from '../../i18n/locale';
+import { getWebMessage } from '../i18n/messages';
 
 type TextComposerProps = {
   readonly disabled: boolean;
+  readonly locale: Locale;
   readonly prompt: string;
   readonly onSubmit: (text: string) => Promise<void>;
 };
@@ -24,7 +27,7 @@ export function TextComposer(props: TextComposerProps): JSX.Element {
   return (
     <form className="composer-form" onSubmit={handleSubmit}>
       <div className="composer-input-wrap">
-        <label className="sr-only" htmlFor="distill-text">输入回复</label>
+        <label className="sr-only" htmlFor="distill-text">{getWebMessage(props.locale, 'composerInputLabel')}</label>
         <textarea
           id="distill-text"
           className="composer-textarea"
@@ -34,7 +37,13 @@ export function TextComposer(props: TextComposerProps): JSX.Element {
           rows={3}
           value={value}
         />
-        <button aria-label="发送" className="send-button" disabled={!canSubmit} title="发送" type="submit">
+        <button
+          aria-label={getWebMessage(props.locale, 'composerSend')}
+          className="send-button"
+          disabled={!canSubmit}
+          title={getWebMessage(props.locale, 'composerSend')}
+          type="submit"
+        >
           <ArrowUp aria-hidden="true" size={20} />
         </button>
       </div>

@@ -16,6 +16,7 @@ Obsidian-first idea clarification and distillation gateway for a single Mac-host
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a debug React web client at `/`.
+- Supports Chinese/English localization in both the web UI and server-generated API error messages (`x-locale` / `accept-language`).
 
 ## Platform Scope
 

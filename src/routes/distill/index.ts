@@ -4,6 +4,7 @@ import type {
   DistillStreamEvent,
   LlmActivityReporter,
 } from '../../types';
+import { getRequestLocale } from '../../i18n/locale';
 import { isRecoverableNetworkError } from '../../services/network-error';
 import { validateDistillRequest, ValidationError } from './validate';
 import { processDistill } from './process';
@@ -139,11 +140,12 @@ function createProductionStreamResponse(
 export async function handleDistill(req: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
+  const locale = getRequestLocale(req);
 
   console.info(`[distill:${requestId}] Request started`);
 
   try {
-    const reqData = await validateDistillRequest(req);
+    const reqData = await validateDistillRequest(req, locale);
     return createProductionStreamResponse(reqData, requestId, startedAt);
   } catch (error) {
     const handledResponse = getHandledErrorResponse(error);

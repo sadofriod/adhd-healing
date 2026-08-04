@@ -186,6 +186,15 @@ summary:focus-visible {
   color: var(--green);
 }
 
+.locale-toggle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-left: auto;
+  min-width: 52px;
+  padding-inline: 10px;
+  width: auto;
+}
+
 .conversation-scroll {
   min-height: 0;
   overflow-y: auto;

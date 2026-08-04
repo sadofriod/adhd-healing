@@ -4,10 +4,16 @@ import { closeMcpServers } from './src/services/mcp';
 import { handleDistill } from './src/routes/distill/index';
 import { handleSessions } from './src/routes/sessions';
 import { handleWebAsset } from './src/web/static';
+import { getRequestLocale, type Locale } from './src/i18n/locale';
+import { getServerMessage } from './src/i18n/server-messages';
 
-async function handleNonDistillRoute(req: Request, pathname: string): Promise<Response | null> {
+async function handleNonDistillRoute(
+  req: Request,
+  pathname: string,
+  locale: Locale
+): Promise<Response | null> {
   if (req.method !== 'GET') return null;
-  return handleWebAsset(pathname);
+  return handleWebAsset(pathname, locale);
 }
 
 async function handleApiRoute(req: Request, pathname: string): Promise<Response | null> {
@@ -18,14 +24,16 @@ async function handleApiRoute(req: Request, pathname: string): Promise<Response 
 
 async function routeRequest(req: Request): Promise<Response> {
   const { pathname } = new URL(req.url);
+  const locale = getRequestLocale(req);
   const matchedResponse = await handleApiRoute(req, pathname)
-    ?? await handleNonDistillRoute(req, pathname);
-  return matchedResponse ?? new Response('Not Found', { status: 404 });
+    ?? await handleNonDistillRoute(req, pathname, locale);
+  return matchedResponse ?? new Response(getServerMessage(locale, 'notFound'), { status: 404 });
 }
 
 async function handleDistillRoute(req: Request): Promise<Response> {
+  const locale = getRequestLocale(req);
   if (req.method === 'POST') return handleDistill(req);
-  return new Response('Method Not Allowed', { status: 405 });
+  return new Response(getServerMessage(locale, 'methodNotAllowed'), { status: 405 });
 }
 
 await verifyStartupDependencies();

@@ -5,6 +5,8 @@ import type {
   LlmProgressPhase,
   LlmTokenUsage,
 } from '../types';
+import { DEFAULT_LOCALE, type Locale } from '../i18n/locale';
+import { getWebMessage } from './i18n/messages';
 
 type ActivityHandler = (event: LlmActivityEvent) => void;
 
@@ -12,14 +14,14 @@ type StreamState = {
   result: DistillApiResponse | null;
 };
 
-type EventParser = (value: Record<string, unknown>) => DistillStreamEvent;
+type EventParser = (value: Record<string, unknown>, locale: Locale) => DistillStreamEvent;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requireRecord(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new Error('服务端返回了无效的进度事件。');
+function requireRecord(value: unknown, locale: Locale): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(getWebMessage(locale, 'streamInvalidRecord'));
   return value;
 }
 
@@ -31,82 +33,82 @@ function isWorkflowStatus(value: unknown): value is DistillApiResponse['status']
   return value === 'CONTINUE' || value === 'FINISH' || value === 'PAUSED';
 }
 
-function parseResultText(value: unknown): string {
-  if (typeof value !== 'string') throw new Error('服务端返回了无效的结果内容。');
+function parseResultText(value: unknown, locale: Locale): string {
+  if (typeof value !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidResultText'));
   return value;
 }
 
-function parseResult(value: Record<string, unknown>): DistillApiResponse {
+function parseResult(value: Record<string, unknown>, locale: Locale): DistillApiResponse {
   const status = value.status;
-  if (!isWorkflowStatus(status)) throw new Error('服务端返回了无效的结果状态。');
-  const text = parseResultText(value.text);
+  if (!isWorkflowStatus(status)) throw new Error(getWebMessage(locale, 'streamInvalidResultStatus'));
+  const text = parseResultText(value.text, locale);
   if (status !== 'FINISH') return { status, text };
   return {
     status,
     text,
-    tokenUsage: parseTokenUsage(value.tokenUsage),
+    tokenUsage: parseTokenUsage(value.tokenUsage, locale),
   };
 }
 
-function parseTokenCount(value: unknown): number {
+function parseTokenCount(value: unknown, locale: Locale): number {
   if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw new Error('服务端返回了无效的 token 数量。');
+    throw new Error(getWebMessage(locale, 'streamInvalidTokenCount'));
   }
   return Number(value);
 }
 
-function parseTokenUsage(value: unknown): LlmTokenUsage {
-  const usage = requireRecord(value);
+function parseTokenUsage(value: unknown, locale: Locale): LlmTokenUsage {
+  const usage = requireRecord(value, locale);
   return {
-    inputTokens: parseTokenCount(usage.inputTokens),
-    outputTokens: parseTokenCount(usage.outputTokens),
-    totalTokens: parseTokenCount(usage.totalTokens),
+    inputTokens: parseTokenCount(usage.inputTokens, locale),
+    outputTokens: parseTokenCount(usage.outputTokens, locale),
+    totalTokens: parseTokenCount(usage.totalTokens, locale),
   };
 }
 
-function parseOptionalDetails(value: unknown): string | undefined {
+function parseOptionalDetails(value: unknown, locale: Locale): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new Error('服务端返回了无效的进度详情。');
+  if (typeof value !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidDetails'));
   return value;
 }
 
-function parseOptionalOperationId(value: unknown): string | undefined {
+function parseOptionalOperationId(value: unknown, locale: Locale): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new Error('服务端返回了无效的调用 ID。');
+  if (typeof value !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidOperationId'));
   return value;
 }
 
-function parseProgressEvent(value: Record<string, unknown>): DistillStreamEvent {
-  if (!isProgressPhase(value.phase)) throw new Error('服务端返回了无效的进度阶段。');
-  if (typeof value.message !== 'string') throw new Error('服务端返回了无效的进度内容。');
+function parseProgressEvent(value: Record<string, unknown>, locale: Locale): DistillStreamEvent {
+  if (!isProgressPhase(value.phase)) throw new Error(getWebMessage(locale, 'streamInvalidPhase'));
+  if (typeof value.message !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidProgressMessage'));
   return {
     type: 'progress',
     phase: value.phase,
     message: value.message,
-    details: parseOptionalDetails(value.details),
-    operationId: parseOptionalOperationId(value.operationId),
+    details: parseOptionalDetails(value.details, locale),
+    operationId: parseOptionalOperationId(value.operationId, locale),
     input: value.input,
     output: value.output,
   };
 }
 
-function parseUsageEvent(value: Record<string, unknown>): DistillStreamEvent {
-  if (typeof value.source !== 'string') throw new Error('服务端返回了无效的 token 来源。');
-  if (typeof value.estimatedCostUsd !== 'number') throw new Error('服务端返回了无效的 token 价格。');
+function parseUsageEvent(value: Record<string, unknown>, locale: Locale): DistillStreamEvent {
+  if (typeof value.source !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidUsageSource'));
+  if (typeof value.estimatedCostUsd !== 'number') throw new Error(getWebMessage(locale, 'streamInvalidUsageCost'));
   return {
     type: 'usage',
     source: value.source,
-    usage: parseTokenUsage(value.usage),
+    usage: parseTokenUsage(value.usage, locale),
     estimatedCostUsd: value.estimatedCostUsd,
   };
 }
 
-function parseResultEvent(value: Record<string, unknown>): DistillStreamEvent {
-  return { type: 'result', result: parseResult(requireRecord(value.result)) };
+function parseResultEvent(value: Record<string, unknown>, locale: Locale): DistillStreamEvent {
+  return { type: 'result', result: parseResult(requireRecord(value.result, locale), locale) };
 }
 
-function parseErrorEvent(value: Record<string, unknown>): DistillStreamEvent {
-  if (typeof value.error !== 'string') throw new Error('服务端返回了无效的错误事件。');
+function parseErrorEvent(value: Record<string, unknown>, locale: Locale): DistillStreamEvent {
+  if (typeof value.error !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidErrorEvent'));
   return { type: 'error', error: value.error };
 }
 
@@ -117,16 +119,16 @@ const EVENT_PARSERS: Readonly<Record<string, EventParser>> = {
   error: parseErrorEvent,
 };
 
-function getEventParser(value: Record<string, unknown>): EventParser {
-  if (typeof value.type !== 'string') throw new Error('服务端返回了无效的事件类型。');
+function getEventParser(value: Record<string, unknown>, locale: Locale): EventParser {
+  if (typeof value.type !== 'string') throw new Error(getWebMessage(locale, 'streamInvalidEventType'));
   const parser = EVENT_PARSERS[value.type];
-  if (!parser) throw new Error('服务端返回了无法识别的进度事件。');
+  if (!parser) throw new Error(getWebMessage(locale, 'streamUnknownEvent'));
   return parser;
 }
 
-function parseStreamEvent(line: string): DistillStreamEvent {
-  const value = requireRecord(JSON.parse(line) as unknown);
-  return getEventParser(value)(value);
+function parseStreamEvent(line: string, locale: Locale): DistillStreamEvent {
+  const value = requireRecord(JSON.parse(line) as unknown, locale);
+  return getEventParser(value, locale)(value, locale);
 }
 
 function handleEvent(
@@ -146,55 +148,67 @@ function isActivityEvent(event: DistillStreamEvent): event is LlmActivityEvent {
   return event.type === 'progress' || event.type === 'usage';
 }
 
-function popRemainder(lines: string[]): string {
+function popRemainder(lines: string[], locale: Locale): string {
   const remainder = lines.pop();
-  if (remainder === undefined) throw new Error('无法解析服务端进度流。');
+  if (remainder === undefined) throw new Error(getWebMessage(locale, 'streamParseRemainderFailed'));
   return remainder;
 }
 
 function consumeCompleteLines(
   buffer: string,
   onActivity: ActivityHandler,
-  state: StreamState
+  state: StreamState,
+  locale: Locale
 ): string {
   const lines = buffer.split('\n');
-  const remainder = popRemainder(lines);
+  const remainder = popRemainder(lines, locale);
   for (const line of lines) {
     if (!line.trim()) continue;
-    handleEvent(parseStreamEvent(line), onActivity, state);
+    handleEvent(parseStreamEvent(line, locale), onActivity, state);
   }
   return remainder;
 }
 
-async function getResponseError(response: Response): Promise<string> {
+async function getResponseError(response: Response, locale: Locale): Promise<string> {
   const value = await response.json().catch(() => null) as unknown;
   if (isRecord(value) && typeof value.error === 'string') return value.error;
-  return '请求失败，请检查服务端日志。';
+  return getWebMessage(locale, 'streamRequestFailed');
+}
+
+async function assertResponseIsOk(response: Response, locale: Locale): Promise<void> {
+  if (response.ok) return;
+  throw new Error(await getResponseError(response, locale));
+}
+
+function getResponseBody(response: Response, locale: Locale): ReadableStream<Uint8Array> {
+  if (!response.body) throw new Error(getWebMessage(locale, 'streamBodyMissing'));
+  return response.body;
 }
 
 export async function readDistillStream(
   response: Response,
-  onActivity: ActivityHandler
+  onActivity: ActivityHandler,
+  locale: Locale = DEFAULT_LOCALE
 ): Promise<DistillApiResponse> {
-  if (!response.ok) throw new Error(await getResponseError(response));
-  if (!response.body) throw new Error('浏览器无法读取服务端进度流。');
+  await assertResponseIsOk(response, locale);
 
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const reader = getResponseBody(response, locale).pipeThrough(new TextDecoderStream()).getReader();
   const state: StreamState = { result: null };
-  const remainder = await readStreamChunks(reader, onActivity, state);
-  return finishStream(remainder, onActivity, state);
+  const remainder = await readStreamChunks(reader, onActivity, state, locale);
+  return finishStream(remainder, onActivity, state, locale);
 }
 
 async function readStreamChunks(
   reader: ReadableStreamDefaultReader<string>,
   onActivity: ActivityHandler,
-  state: StreamState
+  state: StreamState,
+  locale: Locale
 ): Promise<string> {
   let buffer = '';
   while (true) {
     const chunk = await reader.read();
     if (chunk.done) break;
-    buffer = consumeCompleteLines(buffer + chunk.value, onActivity, state);
+    buffer = consumeCompleteLines(buffer + chunk.value, onActivity, state, locale);
   }
   return buffer;
 }
@@ -202,9 +216,10 @@ async function readStreamChunks(
 function finishStream(
   remainder: string,
   onActivity: ActivityHandler,
-  state: StreamState
+  state: StreamState,
+  locale: Locale
 ): DistillApiResponse {
-  if (remainder.trim()) handleEvent(parseStreamEvent(remainder), onActivity, state);
-  if (!state.result) throw new Error('服务端进度流未返回最终结果。');
+  if (remainder.trim()) handleEvent(parseStreamEvent(remainder, locale), onActivity, state);
+  if (!state.result) throw new Error(getWebMessage(locale, 'streamMissingResult'));
   return state.result;
 }
