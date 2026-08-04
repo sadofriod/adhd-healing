@@ -1,6 +1,6 @@
-import { config } from '../config/env';
 import { buildVaultFilename } from './vault';
 import { executeMcpTool } from './mcp';
+import { writeObsidianNote } from './obsidian-writer';
 
 export type ObsidianNoteInput = {
   readonly title: string;
@@ -160,10 +160,9 @@ export async function saveToObsidian(
   executeTool: McpToolExecutor = executeMcpTool
 ): Promise<ObsidianNote> {
   const note = buildObsidianNote(input);
-  await executeTool(config.obsidianMcpWriteTool, {
-    path: note.path,
-    content: note.content,
+  const result = await writeObsidianNote(note.path, note.content, {
+    executeTool,
   });
-  console.log(`[obsidian] Saved through MCP: ${note.path}`);
+  console.log(`[obsidian] Saved through ${result.backend.toUpperCase()}: ${note.path}`);
   return note;
 }

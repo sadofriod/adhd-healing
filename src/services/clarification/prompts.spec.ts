@@ -26,4 +26,11 @@ describe('clarification session research memory prompt', () => {
 
     expect(prompt).not.toContain('Session 调研记忆');
   });
+
+  test('instructs the model to produce standalone graph-friendly markdown', () => {
+    const prompt = buildDecisionPrompt([{ role: 'user', content: '分析 Obsidian 图谱' }]);
+
+    expect(prompt).toContain('独立 Obsidian 笔记');
+    expect(prompt).toContain('3-8 个稳定概念');
+  });
 });

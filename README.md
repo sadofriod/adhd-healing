@@ -11,7 +11,8 @@ Obsidian-first idea clarification and distillation gateway for a single Mac-host
 - Uses DeepSeek (`deepseek-chat`) via the Vercel AI SDK for structured decision-making.
 - Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
 - Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser search and read-only MCP tools.
-- Writes YAML and semantic wiki-link networks through an Obsidian MCP server for Graph View.
+- Writes YAML and semantic wiki-link networks through an Obsidian persistence layer for Graph View.
+- Prefers Obsidian CLI when configured, then falls back to the existing MCP write tool so the same artifact bundle can be persisted either way.
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a debug React web client at `/`.
@@ -46,7 +47,7 @@ This repository is intentionally local-first and macOS-hosted.
 - Language: TypeScript
 - LLM: DeepSeek API (`deepseek-chat`) via Vercel AI SDK (`@ai-sdk/openai`)
 - Search: browser search tool (Google / DuckDuckGo / Bing)
-- Knowledge persistence: Obsidian MCP over SSE
+- Knowledge persistence: Obsidian CLI or MCP over SSE
 - Validation: Zod
 - Debug client: React web app
 
@@ -80,6 +81,9 @@ PORT=5001
 MCP_CONFIG_PATH=/absolute/path/to/mcp.json
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
+OBSIDIAN_WRITE_BACKEND=auto
+OBSIDIAN_CLI_COMMAND=obsidian
+OBSIDIAN_CLI_ARGS=["{path}"]
 ```
 
 ### 3. Install and run
@@ -91,8 +95,9 @@ pnpm start
 
 `pnpm start` starts the Obsidian MCP server, waits for its health endpoint, and then
 starts the gateway. `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` is created and used as
-the MCP Vault, so generated reports are written directly at that Vault's root.
-Stopping the command shuts down both processes.
+the Vault root for generated reports. When `OBSIDIAN_WRITE_BACKEND=auto`, the service
+first tries the configured Obsidian CLI command and falls back to the MCP write tool if
+that command is unavailable. Stopping the command shuts down both processes.
 
 ### 4. Verify the endpoint
 

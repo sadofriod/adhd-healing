@@ -10,6 +10,8 @@ const DECISION_PROMPT_TEMPLATE = `
 
 输出必须是严格 JSON，不要输出 Markdown 代码块，不要输出额外解释。
 
+Markdown 必须同时适合作为独立 Obsidian 笔记：主报告要聚焦一个明确的决策/里程碑，给出足够上下文，并通过 3-8 个稳定概念形成有意义的双链网络；只有高度相关且足够独立的垂直/细分/交叉领域才进入 researchTopics。
+
 如果还需要继续追问，输出：
 {"type":"clarify","message":"只包含一个问题的追问句"}
 
