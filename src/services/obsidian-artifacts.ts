@@ -1,7 +1,7 @@
 import { buildObsidianNote, type McpToolExecutor, type ObsidianNote } from './obsidian';
 import { executeMcpTool } from './mcp';
+import { writeObsidianNote } from './obsidian-writer';
 import { buildSafeTitle, buildVaultFilename } from './vault/filename';
-import { config } from '../config/env';
 import type { DeepResearchArtifact } from '../types';
 
 export type ObsidianArtifactBundleInput = {
@@ -134,11 +134,10 @@ export async function saveObsidianArtifactBundle(
   const notes = [bundle.mainNote, ...bundle.researchNotes];
   for (const note of notes) {
     console.log(`[obsidian] Saving artifact: ${note.path}`);
-    await executeTool(config.obsidianMcpWriteTool, {
-      path: note.path,
-      content: note.content,
+    const result = await writeObsidianNote(note.path, note.content, {
+      executeTool,
     });
-    console.log(`[obsidian] Saved artifact: ${note.path}`);
+    console.log(`[obsidian] Saved artifact via ${result.backend.toUpperCase()}: ${note.path}`);
   }
   console.log(`[obsidian] Saved artifact bundle: ${bundle.directoryPath}`);
   return bundle;
