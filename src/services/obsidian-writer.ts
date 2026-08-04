@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
-import { mkdir, writeFile } from 'fs/promises';
+import { access, mkdir, writeFile } from 'fs/promises';
+import { constants } from 'fs';
 import { dirname, resolve } from 'path';
 import { config } from '../config/env';
 import { executeMcpTool } from './mcp';
@@ -46,6 +47,30 @@ async function writeNoteFile(
   return absolutePath;
 }
 
+async function isCliAvailable(cliCommand: string): Promise<boolean> {
+  if (/[\\/]/.test(cliCommand)) {
+    try {
+      await access(cliCommand, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return Bun.which(cliCommand) !== null;
+}
+
+function buildCliUnavailableError(cliCommand: string): Error {
+  return new Error(
+    `[obsidian] CLI command not found: "${cliCommand}". Install Obsidian CLI from https://obsidian.md/cli, enable Command line interface in Obsidian, and register it in PATH.`
+  );
+}
+
+export async function ensureObsidianCliAvailable(cliCommand: string = config.obsidianCliCommand): Promise<void> {
+  if (await isCliAvailable(cliCommand)) return;
+  throw buildCliUnavailableError(cliCommand);
+}
+
 // eslint-disable-next-line complexity
 function assertCliResult(result: ReturnType<typeof spawnSync>): void {
   const error = result.error;
@@ -62,8 +87,9 @@ async function writeWithCli(
   options: ObsidianWriteOptions,
   vaultPath: string
 ): Promise<void> {
-  const absolutePath = await writeNoteFile(relativePath, content, vaultPath);
   const cliCommand = options.cliCommand ?? config.obsidianCliCommand;
+  await ensureObsidianCliAvailable(cliCommand);
+  const absolutePath = await writeNoteFile(relativePath, content, vaultPath);
   const cliArgs = resolveCliArgs(
     options.cliArgs ?? config.obsidianCliArgs,
     absolutePath,
@@ -109,18 +135,15 @@ async function writeWithSelectedBackend(
   return { backend: 'mcp', path: relativePath };
 }
 
-async function writeWithAutoFallback(
+async function writeWithCliMode(
   relativePath: string,
   content: string,
   options: ObsidianWriteOptions,
   vaultPath: string
 ): Promise<ObsidianWriteResult> {
-  try {
-    return await writeWithSelectedBackend(relativePath, content, options, vaultPath, 'cli');
-  } catch (error) {
-    console.warn('[obsidian] CLI write failed, falling back to MCP:', error);
-    return writeWithSelectedBackend(relativePath, content, options, vaultPath, 'mcp');
-  }
+  const cliCommand = options.cliCommand ?? config.obsidianCliCommand;
+  await ensureObsidianCliAvailable(cliCommand);
+  return writeWithSelectedBackend(relativePath, content, options, vaultPath, 'cli');
 }
 
 async function writeWithFixedBackend(
@@ -142,7 +165,7 @@ export async function writeObsidianNote(
   const vaultPath = options.vaultPath ?? config.obsidianVaultPath;
   const backend = options.backend ?? config.obsidianWriteBackend;
   const backendHandlers: Record<ObsidianWriteBackend, (relativePath: string, content: string, options: ObsidianWriteOptions, vaultPath: string) => Promise<ObsidianWriteResult>> = {
-    auto: (nextRelativePath, nextContent, nextOptions, nextVaultPath) => writeWithAutoFallback(nextRelativePath, nextContent, nextOptions, nextVaultPath),
+    auto: (nextRelativePath, nextContent, nextOptions, nextVaultPath) => writeWithCliMode(nextRelativePath, nextContent, nextOptions, nextVaultPath),
     cli: (nextRelativePath, nextContent, nextOptions, nextVaultPath) => writeWithFixedBackend(nextRelativePath, nextContent, nextOptions, nextVaultPath, 'cli'),
     mcp: (nextRelativePath, nextContent, nextOptions, nextVaultPath) => writeWithFixedBackend(nextRelativePath, nextContent, nextOptions, nextVaultPath, 'mcp'),
   };

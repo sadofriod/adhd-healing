@@ -1,15 +1,50 @@
 import { generateText } from 'ai';
 import { getLlmClient, CHAT_MODEL } from '../llm-client';
 import { getMcpTools } from '../mcp';
+import { getSessionResearchMemory } from '../session';
+import { rememberCompressedSessionResearch } from '../session-memory';
 import { reportTokenUsages } from '../token-usage';
 import { SYSTEM_PROMPT } from './agent';
 import { createBrowserSearchTool } from './browser-search-tool';
 import { buildDecisionPrompt } from './prompts';
-import { collectToolActivities } from './tool-usage';
+import { collectToolActivities, type ToolActivity } from './tool-usage';
 import type { LlmActivityReporter } from '../../types';
 import type { SessionMessage } from './types';
 
 const ignoreActivity: LlmActivityReporter = () => undefined;
+
+export function buildDecisionAgentPrompt(
+  sessionMessages: SessionMessage[]
+): string {
+  return buildDecisionPrompt(
+    sessionMessages,
+    undefined,
+    getSessionResearchMemory()
+  );
+}
+
+export async function recordDecisionToolActivities(
+  activities: readonly ToolActivity[],
+  reportActivity: LlmActivityReporter
+): Promise<void> {
+  await Promise.all(activities.map(async activity => {
+    if (activity.output !== undefined) {
+      await rememberCompressedSessionResearch({
+        toolName: activity.toolName,
+        input: activity.input,
+        output: activity.output,
+      }, reportActivity);
+    }
+    reportActivity({
+      type: 'progress',
+      phase: 'tool-call',
+      message: `澄清决策：${activity.toolName}`,
+      operationId: activity.operationId,
+      input: activity.input,
+      ...(activity.output === undefined ? {} : { output: activity.output }),
+    });
+  }));
+}
 
 export async function generateDecisionText(
   sessionMessages: SessionMessage[],
@@ -21,7 +56,7 @@ export async function generateDecisionText(
   const result = await generateText({
     model: client(CHAT_MODEL),
     system: SYSTEM_PROMPT,
-    prompt: buildDecisionPrompt(sessionMessages),
+    prompt: buildDecisionAgentPrompt(sessionMessages),
     tools: {
       browser_search: createBrowserSearchTool(),
       ...mcpTools,
@@ -29,14 +64,8 @@ export async function generateDecisionText(
     toolChoice: 'auto',
     maxSteps: 5,
     onStepFinish: async step => {
-      collectToolActivities([step], mcpToolNames).forEach(activity => reportActivity({
-        type: 'progress',
-        phase: 'tool-call',
-        message: `澄清决策：${activity.toolName}`,
-        operationId: activity.operationId,
-        input: activity.input,
-        ...(activity.output === undefined ? {} : { output: activity.output }),
-      }));
+      const activities = collectToolActivities([step], mcpToolNames);
+      await recordDecisionToolActivities(activities, reportActivity);
     },
   });
 

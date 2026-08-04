@@ -12,7 +12,7 @@
 - 当需要最新文档 / 产品动态 / 外部事实时，可调用 Google / DuckDuckGo / Bing 浏览器搜索工具。
 - 澄清收束时自动识别与主报告高度相关的垂直、细分或交叉领域，并行启动可使用浏览器搜索和只读 MCP 工具的独立调研 Agent。
 - 会话结束时，通过独立 Obsidian 持久化层写入带 YAML 属性、分类关系和语义化 `[[双链]]` 网络的完整 Markdown，适配 Graph View。
-- 默认会优先尝试 Obsidian CLI；若 CLI 不可用则回退到现有 MCP 写入链路。
+- 默认会使用 Obsidian CLI 作为主写入路径；CLI 缺失时会直接失败并提示安装。
 - Obsidian 桌面应用无需常驻；Vault 文件系统可直接被写入。
 - Apple Reminders 仅保存时间戳、行动标题和 Obsidian 双链线索。
 - 在 `/` 提供调试用 React 网页客户端。
@@ -56,6 +56,7 @@
 - Bun 1.0+
 - pnpm 10+
 - macOS（需授权 Reminders 权限给终端/Bun）
+- 已安装 Obsidian 桌面应用，并在设置中启用 Command line interface，且已注册到 PATH
 - DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com)）
 
 ### 2. 配置环境变量
@@ -79,7 +80,7 @@ PORT=5001
 MCP_CONFIG_PATH=/你的/mcp.json/绝对路径
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
-OBSIDIAN_WRITE_BACKEND=auto
+OBSIDIAN_WRITE_BACKEND=cli
 OBSIDIAN_CLI_COMMAND=obsidian
 OBSIDIAN_CLI_ARGS=["{path}"]
 ```
@@ -93,7 +94,7 @@ pnpm start
 
 `pnpm start` 会先启动 Obsidian MCP Server，等待其健康检查通过后再启动网关。
 `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` 会被创建并作为报告写入的 Vault 根目录。
-当 `OBSIDIAN_WRITE_BACKEND=auto` 时，服务会先尝试配置的 Obsidian CLI 命令；若该命令不可用，则回退到 MCP 写入。停止该命令时，两个进程会一起退出。
+当 `OBSIDIAN_WRITE_BACKEND=auto` 时，服务会直接使用配置的 Obsidian CLI 命令；若该命令不可用，会立即失败并提示安装 Obsidian CLI。若你明确想走 MCP 写入，请将 `OBSIDIAN_WRITE_BACKEND` 设为 `mcp`。停止该命令时，两个进程会一起退出。
 
 ### 4. 验证接口
 

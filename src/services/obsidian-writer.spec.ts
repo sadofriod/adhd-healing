@@ -34,11 +34,12 @@ describe('Obsidian writer adapter', () => {
     expect(content).toContain('CLI_OK');
   });
 
-  it('falls back to MCP when CLI execution fails in auto mode', async () => {
+  it('fails fast with install guidance when CLI is unavailable in auto mode', async () => {
     const calls: Array<{ path: string; content: string }> = [];
     const vaultPath = await mkdtemp(join(tmpdir(), 'obsidian-mcp-fallback-'));
     tempDirs.push(vaultPath);
-    const result = await writeObsidianNote('note.md', 'hello', {
+
+    await expect(writeObsidianNote('note.md', 'hello', {
       backend: 'auto',
       vaultPath,
       cliCommand: 'missing-command',
@@ -46,9 +47,8 @@ describe('Obsidian writer adapter', () => {
         calls.push({ path: args.path as string, content: args.content as string });
         return { ok: true };
       },
-    });
+    })).rejects.toThrow('Install Obsidian CLI from https://obsidian.md/cli');
 
-    expect(result.backend).toBe('mcp');
-    expect(calls).toEqual([{ path: 'note.md', content: 'hello' }]);
+    expect(calls).toEqual([]);
   });
 });

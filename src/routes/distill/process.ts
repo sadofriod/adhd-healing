@@ -1,7 +1,10 @@
 import type {
   DistillRequest,
   DistillApiResponse,
+  LlmDecision,
   LlmFinalDecision,
+  LlmClarifyDecision,
+  LlmProgressDecision,
   LlmActivityReporter,
 } from '../../types';
 import {
@@ -15,12 +18,16 @@ import {
 import { makeDecision } from '../../services/clarification';
 import { runDeepResearch } from '../../services/clarification/research';
 import { runFinalizeWritePipeline } from './finalize';
+import { persistDistillCheckpoint } from './checkpoint';
 
 type ProcessDistillDeps = {
   readonly makeDecision?: typeof makeDecision;
   readonly runDeepResearch?: typeof runDeepResearch;
   readonly runFinalizeWritePipeline?: typeof runFinalizeWritePipeline;
+  readonly persistDistillCheckpoint?: typeof persistDistillCheckpoint;
 };
+
+type ContinueDecision = LlmClarifyDecision | LlmProgressDecision;
 
 function isFinalDecision(decision: { type: string }): decision is LlmFinalDecision {
   return decision.type === 'final';
@@ -82,7 +89,7 @@ async function resolveDistillOutcome(
 ): Promise<DistillApiResponse> {
   return isFinalDecision(decision)
     ? finalizeDecision(decision, session, reportProgress, deps)
-    : handleContinue(decision);
+    : handleContinue(decision, session, deps.persistDistillCheckpoint);
 }
 
 function buildTranscript(session: Array<{ role: 'user' | 'assistant'; content: string }>): string {
@@ -142,8 +149,24 @@ async function handleComplete(
   };
 }
 
-async function handleContinue(decision: { message: string }): Promise<DistillApiResponse> {
-  console.log(`[distill] 💬 AI 追问: ${decision.message}`);
+function getContinueLogLabel(decision: ContinueDecision): string {
+  if (decision.type === 'clarify') return 'AI 追问';
+  return `AI 阶段进展（${decision.phase}）`;
+}
+
+async function handleContinue(
+  decision: ContinueDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  persistCheckpoint: typeof persistDistillCheckpoint = persistDistillCheckpoint
+): Promise<DistillApiResponse> {
+  console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
+
+  try {
+    await persistCheckpoint({ decision, session });
+  } catch (error) {
+    console.error('[distill] 写入阶段性结论失败，继续返回当前结论：', error);
+  }
+
   await appendToSession('assistant', decision.message);
   await flushSessionPersistence();
   return { status: 'CONTINUE', text: decision.message };

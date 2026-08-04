@@ -30,9 +30,49 @@ export type DecisionParseResult =
   | LlmProgressDecision
   | LlmFinalDecisionDraft;
 
-function extractJsonObject(rawText: string): string {
-  const match = rawText.match(/\{[\s\S]*\}/);
-  return match?.[0] ?? rawText;
+function extractJsonObjects(rawText: string): readonly string[] {
+  const objects: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const char = rawText[index];
+    if (!char) continue;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char !== '}' || depth === 0) continue;
+    depth -= 1;
+    if (depth !== 0 || start === -1) continue;
+    objects.push(rawText.slice(start, index + 1));
+    start = -1;
+  }
+
+  return objects;
 }
 
 function isClarificationRequest(message: string): boolean {
@@ -107,11 +147,55 @@ function normalizeProgressDecision(
 }
 
 function tryParseStructuredDecision(rawText: string): ParsedDecision | null {
-  try {
-    return DecisionSchema.parse(JSON.parse(extractJsonObject(rawText)));
-  } catch {
-    return null;
-  }
+  const parsedDecisions = extractJsonObjects(rawText).flatMap(jsonText => {
+    try {
+      return [DecisionSchema.parse(JSON.parse(jsonText))];
+    } catch {
+      return [];
+    }
+  });
+
+  if (parsedDecisions.length === 0) return null;
+
+  const lastFinalDecision = parsedDecisions
+    .filter(decision => decision.type === 'final')
+    .at(-1);
+  if (lastFinalDecision) return lastFinalDecision;
+
+  return parsedDecisions.at(-1) ?? null;
+}
+
+function extractDecisionMessage(rawText: string): string {
+  const objects = extractJsonObjects(rawText);
+  if (objects.length === 0) return rawText;
+  const [firstObject] = objects;
+  if (!firstObject) return rawText;
+  const start = rawText.indexOf(firstObject);
+  if (start === -1) return rawText;
+
+  const plainPrefix = rawText.slice(0, start).trim();
+  if (plainPrefix) return plainPrefix;
+
+  return rawText;
+}
+
+function normalizeToolThenFinalNarration(rawText: string): DecisionParseResult | null {
+  const message = extractDecisionMessage(rawText).trim();
+  if (!message) return null;
+  if (!rawText.includes('"type":"final"')) return null;
+  if (isClarificationRequest(message)) return null;
+
+  return {
+    type: 'progress',
+    phase: inferProgressPhase(message),
+    message,
+  };
+}
+
+function tryNormalizeMixedNarration(rawText: string): DecisionParseResult | null {
+  const normalized = normalizeToolThenFinalNarration(rawText);
+  if (normalized) return normalized;
+  return null;
 }
 
 function normalizeParsedDecision(
@@ -127,6 +211,9 @@ function normalizeUnstructuredDecision(
   rawText: string,
   phaseHint?: LlmProgressPhase
 ): DecisionParseResult {
+  const mixedNarration = tryNormalizeMixedNarration(rawText);
+  if (mixedNarration) return mixedNarration;
+
   if (rawText.trim()) return normalizeClarifyDecision(rawText);
   if (!phaseHint) return normalizeClarifyDecision(rawText);
   return {

@@ -12,7 +12,7 @@ Obsidian-first idea clarification and distillation gateway for a single Mac-host
 - Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
 - Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser search and read-only MCP tools.
 - Writes YAML and semantic wiki-link networks through an Obsidian persistence layer for Graph View.
-- Prefers Obsidian CLI when configured, then falls back to the existing MCP write tool so the same artifact bundle can be persisted either way.
+- Uses Obsidian CLI as the primary write path and fails fast with install guidance if the CLI is missing.
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a debug React web client at `/`.
@@ -58,6 +58,7 @@ This repository is intentionally local-first and macOS-hosted.
 - Bun 1.0+
 - pnpm 10+
 - macOS with Reminders permissions granted to Terminal/Bun
+- Obsidian desktop app with Command line interface enabled and registered in PATH
 - DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com))
 
 ### 2. Configure environment
@@ -81,7 +82,7 @@ PORT=5001
 MCP_CONFIG_PATH=/absolute/path/to/mcp.json
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
-OBSIDIAN_WRITE_BACKEND=auto
+OBSIDIAN_WRITE_BACKEND=cli
 OBSIDIAN_CLI_COMMAND=obsidian
 OBSIDIAN_CLI_ARGS=["{path}"]
 ```
@@ -96,8 +97,9 @@ pnpm start
 `pnpm start` starts the Obsidian MCP server, waits for its health endpoint, and then
 starts the gateway. `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` is created and used as
 the Vault root for generated reports. When `OBSIDIAN_WRITE_BACKEND=auto`, the service
-first tries the configured Obsidian CLI command and falls back to the MCP write tool if
-that command is unavailable. Stopping the command shuts down both processes.
+uses the configured Obsidian CLI command and now fails fast with install guidance if
+that command is unavailable. Set `OBSIDIAN_WRITE_BACKEND=mcp` only if you explicitly
+want MCP writes instead of CLI writes. Stopping the command shuts down both processes.
 
 ### 4. Verify the endpoint
 

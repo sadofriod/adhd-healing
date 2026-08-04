@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { DistillRequest, LlmFinalDecision } from '../../types';
+import type {
+  DistillRequest,
+  LlmClarifyDecision,
+  LlmFinalDecision,
+  LlmProgressDecision,
+} from '../../types';
 import { processDistill } from './process';
 
 const REQUEST: DistillRequest = {
@@ -86,5 +91,49 @@ describe('processDistill', () => {
     expect(response.status).toBe('FINISH');
     expect(runDeepResearchCalled).toBeFalse();
     expect(finalizeResearchArtifacts).toEqual([]);
+  });
+
+  test('persists a stage checkpoint for non-final decisions', async () => {
+    const checkpoints: Array<{ decision: LlmClarifyDecision | LlmProgressDecision; size: number }> = [];
+
+    const response = await processDistill(REQUEST, () => undefined, {
+      makeDecision: async () => ({
+        type: 'progress',
+        phase: 'tool-call',
+        message: '正在分析仓库并调用工具',
+      }),
+      persistDistillCheckpoint: async input => {
+        checkpoints.push({ decision: input.decision, size: input.session.length });
+      },
+    });
+
+    expect(response.status).toBe('CONTINUE');
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0]).toEqual({
+      decision: {
+        type: 'progress',
+        phase: 'tool-call',
+        message: '正在分析仓库并调用工具',
+      },
+      size: 1,
+    });
+  });
+
+  test('does not persist a stage checkpoint after final decisions', async () => {
+    let checkpointCalled = false;
+
+    const response = await processDistill(REQUEST, () => undefined, {
+      makeDecision: async () => buildFinalDecision(false),
+      persistDistillCheckpoint: async () => {
+        checkpointCalled = true;
+      },
+      runFinalizeWritePipeline: async () => ({
+        directoryPath: '/tmp/idea',
+        mainLink: 'obsidian://idea',
+      }),
+    });
+
+    expect(response.status).toBe('FINISH');
+    expect(checkpointCalled).toBeFalse();
   });
 });

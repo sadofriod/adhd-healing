@@ -7,6 +7,7 @@
 | Bun | ≥ 1.0 | Runtime |
 | pnpm | ≥ 10 | Package manager |
 | macOS | — | Required for Reminders sync via `osascript` |
+| Obsidian desktop app + CLI | Latest | Enable Command line interface in Obsidian and register `obsidian` in PATH; the app must be running for CLI calls |
 | DeepSeek API Key | — | [platform.deepseek.com](https://platform.deepseek.com) |
 | Obsidian MCP Server | `@smith-and-web/obsidian-mcp-server@1.4.0` | Direct filesystem access; Obsidian does not need to stay open |
 
@@ -25,6 +26,7 @@ GITHUB_PERSONAL_ACCESS_TOKEN=github_pat_...
 PORT=5001
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
 OBSIDIAN_NOTE_FOLDER=Brainstorm
+OBSIDIAN_WRITE_BACKEND=cli
 ```
 
 ## 2. Install and start
@@ -36,7 +38,9 @@ pnpm start
 
 The start command creates `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`, uses that artifact
 directory as the Obsidian MCP Vault, waits for its health endpoint, and then launches
-the gateway. Both processes stop together.
+the gateway. Both processes stop together. If the CLI is not installed or not
+registered, startup now fails fast with a link to the official Obsidian CLI setup
+page instead of silently falling back to MCP.
 The default [MCP configuration](../mcp.json) connects to `http://localhost:3001/sse`
 and retains the read-only GitHub MCP server for repository context.
 
@@ -112,6 +116,7 @@ Steps:
 | Error | Likely cause |
 |---|---|
 | `Invalid environment variables` | `.env` missing `DEEPSEEK_API_KEY` or `BRAIN_VAULT_PATH` |
+| CLI not found | Obsidian CLI is not installed, not registered in PATH, or Obsidian is not running |
 | MCP connection failure on startup | Obsidian MCP Server is not listening on port `3001` |
 | `MCP tool is unavailable` | `OBSIDIAN_MCP_WRITE_TOOL` does not match the prefixed MCP tool name |
 | `400` from `/distill` | `text` field missing or empty |

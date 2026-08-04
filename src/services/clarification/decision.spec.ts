@@ -23,4 +23,25 @@ describe('parseDecision', () => {
       researchTopics: [],
     });
   });
+
+  test('prefers the final decision when multiple JSON objects are present', () => {
+    const decision = parseDecision([
+      '{"type":"clarify","message":"先确认边界？"}',
+      '{"type":"final","message":"可直接执行","markdown":"# 报告","milestone":"补齐 CI","title":"Open Core","researchTopics":[{"title":"许可证边界","scope":"AGPL","relevance":"影响商业化","executionGoal":"给出落地边界"}]}'
+    ].join('\n\n'));
+
+    expect(decision).toEqual({
+      type: 'final',
+      message: '可直接执行',
+      markdown: '# 报告',
+      milestone: '补齐 CI',
+      title: 'Open Core',
+      researchTopics: [{
+        title: '许可证边界',
+        scope: 'AGPL',
+        relevance: '影响商业化',
+        executionGoal: '给出落地边界',
+      }],
+    });
+  });
 });
