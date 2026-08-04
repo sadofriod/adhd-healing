@@ -65,9 +65,25 @@ function spawnProcess(command: string[], environment?: Record<string, string | u
   });
 }
 
+function resolveSqliteDatabaseUrl(): string {
+  const fallbackUrl = `file:${resolve(process.cwd(), 'data/sessions.db')}`;
+  const rawDatabaseUrl = process.env.DATABASE_URL?.trim();
+
+  if (!rawDatabaseUrl) return fallbackUrl;
+  if (rawDatabaseUrl.startsWith('file:')) return rawDatabaseUrl;
+  if (/^[a-z][a-z\d+.-]*:/i.test(rawDatabaseUrl)) {
+    console.warn(
+      `[start] DATABASE_URL uses an unsupported protocol for sqlite (${rawDatabaseUrl}). Falling back to ${fallbackUrl}.`
+    );
+    return fallbackUrl;
+  }
+
+  // Support plain filesystem paths in DATABASE_URL by converting them to sqlite file URLs.
+  return `file:${resolve(process.cwd(), rawDatabaseUrl)}`;
+}
+
 async function deployDatabaseMigrations(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL
-    ?? `file:${resolve(process.cwd(), 'data/sessions.db')}`;
+  const databaseUrl = resolveSqliteDatabaseUrl();
   const migration = spawnProcess(['pnpm', 'exec', 'prisma', 'migrate', 'deploy'], {
     ...process.env,
     DATABASE_URL: databaseUrl,

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { JSX } from 'react';
+import { isToolCrashProgressEntry } from '../tool-crash';
 import type { ProgressEntry } from '../types';
 
 type LlmProgressPanelProps = {
@@ -71,8 +72,10 @@ function renderProgressEntry(entry: ProgressEntry): JSX.Element {
       </li>
     );
   }
+  const isCrash = isToolCrashProgressEntry(entry);
+  const className = isCrash ? 'progress-item progress-item-crash' : 'progress-item';
   return (
-    <li className="progress-item" key={entry.id}>
+    <li className={className} key={entry.id}>
       <span className={`progress-phase progress-phase-${entry.phase}`}>
         {PHASE_LABELS[entry.phase]}
       </span>
@@ -91,20 +94,12 @@ export function LlmProgressPanel(props: LlmProgressPanelProps): JSX.Element {
   }, [props.entries]);
 
   return (
-    <section className="panel-surface progress-card" aria-live="polite">
-      <div className="panel-heading progress-heading">
-        <div>
-          <p className="section-kicker">LLM workflow</p>
-          <h2>AI 思考过程</h2>
-        </div>
-        <span className="status-pill">{getProgressStatusLabel(props.status)}</span>
-      </div>
+    <details className="workflow-details" open={props.status !== 'idle'}>
+      <summary>{getProgressStatusLabel(props.status)}</summary>
       <div className="progress-scroller" ref={scrollerRef}>
-        {progressItems.length > 0
-          ? <ol className="progress-list">{progressItems}</ol>
-          : <p className="progress-placeholder">提交想法后，这里会实时展示分析、工具调用和 Sub-agent 进度。</p>}
+        {progressItems.length > 0 ? <ol className="progress-list">{progressItems}</ol> : null}
       </div>
-    </section>
+    </details>
   );
 }
 

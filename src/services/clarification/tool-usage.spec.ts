@@ -6,14 +6,14 @@ describe('tool usage display names', () => {
     const names = collectToolDisplayNames([
       {
         toolCalls: [
-          { toolName: 'browser_search' },
-          { toolName: 'github_get_file_contents' },
+          { toolCallId: '1', toolName: 'browser_search', args: {} },
+          { toolCallId: '2', toolName: 'github_get_file_contents', args: {} },
         ],
       },
       {
         toolCalls: [
-          { toolName: 'github_get_file_contents' },
-          { toolName: 'custom_tool' },
+          { toolCallId: '3', toolName: 'github_get_file_contents', args: {} },
+          { toolCallId: '4', toolName: 'custom_tool', args: {} },
         ],
       },
     ], new Set(['github_get_file_contents']));
@@ -30,6 +30,7 @@ describe('tool usage display names', () => {
       {
         toolResults: [
           {
+            toolCallId: '1',
             toolName: 'github_get_latest_release',
             result: { ok: false, error: '404 Not Found' },
           },
@@ -38,10 +39,12 @@ describe('tool usage display names', () => {
       {
         toolResults: [
           {
+            toolCallId: '2',
             toolName: 'github_get_latest_release',
             result: { ok: false, error: 'still unavailable' },
           },
           {
+            toolCallId: '3',
             toolName: 'github_get_repo',
             result: { ok: true },
           },

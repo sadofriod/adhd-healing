@@ -9,10 +9,20 @@ import {
   collectToolActivities,
   collectToolDisplayNames,
   collectToolFailures,
+  type ToolCallStep,
+  type ToolResultStep,
   type ToolActivity,
   type ToolFailure,
 } from './tool-usage';
-import type { DecisionGeneration } from './service';
+
+export type DecisionGeneration = {
+  readonly text: string;
+  readonly phaseHint?: 'process' | 'tool-call' | 'sub-agent';
+  readonly toolNames?: readonly string[];
+  readonly toolActivities?: readonly ToolActivity[];
+  readonly toolFailures?: readonly ToolFailure[];
+  readonly tokenUsages?: readonly LlmTokenUsage[];
+};
 
 const ignoreProgress: LlmActivityReporter = () => undefined;
 
@@ -70,7 +80,7 @@ export function reportGenerationToolUsage(
   generation: DecisionGeneration,
   reportProgress: LlmActivityReporter = ignoreProgress
 ): void {
-  const activities = generation.toolActivities ?? [];
+  const activities = getGenerationToolActivities(generation);
   if (activities.length > 0) {
     reportToolActivities(activities, reportProgress);
     return;
@@ -104,6 +114,12 @@ export function attachToolNames(
   };
 }
 
+export function getGenerationToolActivities(
+  generation: DecisionGeneration
+): readonly ToolActivity[] {
+  return generation.toolActivities ?? [];
+}
+
 export function getGenerationToolNames(
   generation: DecisionGeneration
 ): readonly string[] {
@@ -135,7 +151,11 @@ export function createDecisionGeneration(
 }
 
 export function collectGenerationMetadata(
-  steps: readonly { usage: { promptTokens: number; completionTokens: number; totalTokens: number }; toolCalls?: Array<unknown> }[],
+  steps: readonly {
+    usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+    toolCalls?: ToolCallStep['toolCalls'];
+    toolResults?: ToolResultStep['toolResults'];
+  }[],
   availableMcpTools: ReadonlySet<string>
 ): {
   readonly toolNames: readonly string[];
@@ -143,10 +163,21 @@ export function collectGenerationMetadata(
   readonly toolFailures: readonly ToolFailure[];
   readonly tokenUsages: readonly LlmTokenUsage[];
 } {
+  const callSteps: ToolCallStep[] = steps.map(step => ({
+    toolCalls: step.toolCalls ?? [],
+  }));
+  const resultSteps: ToolResultStep[] = steps.map(step => ({
+    toolResults: step.toolResults ?? [],
+  }));
+  const activitySteps: Array<ToolCallStep & ToolResultStep> = steps.map(step => ({
+    toolCalls: step.toolCalls ?? [],
+    toolResults: step.toolResults ?? [],
+  }));
+
   return {
-    toolNames: collectToolDisplayNames(steps, availableMcpTools),
-    toolActivities: collectToolActivities(steps, availableMcpTools),
-    toolFailures: collectToolFailures(steps),
+    toolNames: collectToolDisplayNames(callSteps, availableMcpTools),
+    toolActivities: collectToolActivities(activitySteps, availableMcpTools),
+    toolFailures: collectToolFailures(resultSteps),
     tokenUsages: steps.map(step => ({
       inputTokens: step.usage.promptTokens,
       outputTokens: step.usage.completionTokens,

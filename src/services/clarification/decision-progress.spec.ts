@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { LlmClarifyDecision, LlmProgressDecision, LlmFinalDecisionDraft } from '../../types';
+import type { LlmClarifyDecision, LlmProgressDecision } from '../../types';
 import {
   attachToolNames,
   createDecisionGeneration,
@@ -60,6 +60,7 @@ describe('decision progress helpers', () => {
       toolActivities: activities,
       toolNames: ['browser_search（内置）'],
     }, event => {
+      if (event.type !== 'progress') return;
       events.push(event);
     });
 

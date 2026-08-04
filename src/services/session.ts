@@ -1,4 +1,4 @@
-import type { LlmTokenUsage } from '../types';
+import type { LlmTokenUsage, SessionHistoryItem } from '../types';
 import { database } from './database';
 import { addTokenUsage, EMPTY_TOKEN_USAGE } from './token-usage';
 
@@ -138,6 +138,59 @@ async function loadLatestSession(): Promise<SessionState> {
 async function ensureSession(): Promise<SessionState> {
   if (!currentSession) currentSession = await loadLatestSession();
   return currentSession;
+}
+
+function getSessionTitle(messages: readonly SessionMessage[]): string {
+  const firstUserMessage = messages.find(message => message.role === 'user');
+  if (!firstUserMessage) return '未命名会话';
+  return firstUserMessage.content.slice(0, 48);
+}
+
+export async function listSessionHistory(): Promise<readonly SessionHistoryItem[]> {
+  await flushSessionPersistence();
+  const sessions = await database.session.findMany({
+    orderBy: { updatedAt: 'desc' },
+    include: { messages: { orderBy: { id: 'asc' } } },
+  });
+  return sessions.map(session => {
+    const messages = session.messages.map(message => ({
+      role: parseRole(message.role),
+      content: message.content,
+    }));
+    return {
+      id: session.id,
+      status: parseStatus(session.status),
+      title: getSessionTitle(messages),
+      messages,
+      tokenUsage: {
+        inputTokens: session.inputTokens,
+        outputTokens: session.outputTokens,
+        totalTokens: session.totalTokens,
+      },
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.updatedAt.toISOString(),
+      finishedAt: session.finishedAt?.toISOString() ?? null,
+    };
+  });
+}
+
+export async function activateSession(sessionId: string): Promise<boolean> {
+  await flushSessionPersistence();
+  const selected = await database.session.findUnique({ where: { id: sessionId } });
+  if (!selected) return false;
+  await database.$transaction([
+    database.session.updateMany({
+      where: { status: 'ACTIVE', id: { not: sessionId } },
+      data: { status: 'ABANDONED', finishedAt: new Date() },
+    }),
+    database.session.update({
+      where: { id: sessionId },
+      data: { status: 'ACTIVE', finishedAt: null },
+    }),
+  ]);
+  currentSession = null;
+  await ensureSession();
+  return true;
 }
 
 export function getSession(): SessionMessage[] {

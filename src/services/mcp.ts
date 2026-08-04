@@ -205,11 +205,11 @@ export async function executeMcpTool(
   args: Record<string, unknown>
 ): Promise<unknown> {
   const execute = getToolExecutor(toolName);
-  const result = await executeMcpOperation(toolName, abortSignal => execute(args, {
+  const result = await executeMcpOperation(toolName, abortSignal => Promise.resolve(execute(args, {
     toolCallId: `direct-${crypto.randomUUID()}`,
     messages: [],
     abortSignal,
-  }));
+  })));
   assertSuccessfulToolResult(toolName, result);
   return result;
 }

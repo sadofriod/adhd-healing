@@ -2,6 +2,7 @@ import { config } from './src/config/env';
 import { verifyStartupDependencies } from './src/services/startup';
 import { closeMcpServers } from './src/services/mcp';
 import { handleDistill } from './src/routes/distill/index';
+import { handleSessions } from './src/routes/sessions';
 import { handleWebAsset } from './src/web/static';
 
 async function handleNonDistillRoute(req: Request, pathname: string): Promise<Response | null> {
@@ -9,11 +10,16 @@ async function handleNonDistillRoute(req: Request, pathname: string): Promise<Re
   return handleWebAsset(pathname);
 }
 
+async function handleApiRoute(req: Request, pathname: string): Promise<Response | null> {
+  if (pathname === '/distill') return handleDistillRoute(req);
+  if (pathname.startsWith('/sessions')) return handleSessions(req);
+  return null;
+}
+
 async function routeRequest(req: Request): Promise<Response> {
   const { pathname } = new URL(req.url);
-  const matchedResponse = pathname === '/distill'
-    ? await handleDistillRoute(req)
-    : await handleNonDistillRoute(req, pathname);
+  const matchedResponse = await handleApiRoute(req, pathname)
+    ?? await handleNonDistillRoute(req, pathname);
   return matchedResponse ?? new Response('Not Found', { status: 404 });
 }
 

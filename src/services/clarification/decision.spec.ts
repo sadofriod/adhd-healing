@@ -20,6 +20,7 @@ describe('parseDecision', () => {
       markdown: '已经收敛好了',
       milestone: '明确 20 分钟第一步',
       title: '未命名想法',
+      researchTopics: [],
     });
   });
 });

@@ -34,17 +34,6 @@ export function ConversationTimeline(props: ConversationTimelineProps): JSX.Elem
   });
 
   return (
-    <section className="panel-surface timeline-card">
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Timeline</p>
-          <h2>对话轨迹</h2>
-        </div>
-        <span className="session-chip">
-          {props.entries.length > 1 ? 'session active' : 'awaiting first turn'}
-        </span>
-      </div>
-      <ol className="timeline-list">{timelineItems}</ol>
-    </section>
+    <ol className="timeline-list">{timelineItems}</ol>
   );
 }

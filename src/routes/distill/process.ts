@@ -3,22 +3,86 @@ import type {
   DistillApiResponse,
   LlmFinalDecision,
   LlmActivityReporter,
-  LlmActivityEvent,
 } from '../../types';
 import {
   resetSession,
   appendToSession,
-  addSessionTokenUsage,
   flushSessionPersistence,
   getSessionTokenUsage,
   markSessionFinished,
   prepareUserTurn,
 } from '../../services/session';
 import { makeDecision } from '../../services/clarification';
+import { runDeepResearch } from '../../services/clarification/research';
 import { runFinalizeWritePipeline } from './finalize';
+
+type ProcessDistillDeps = {
+  readonly makeDecision?: typeof makeDecision;
+  readonly runDeepResearch?: typeof runDeepResearch;
+  readonly runFinalizeWritePipeline?: typeof runFinalizeWritePipeline;
+};
 
 function isFinalDecision(decision: { type: string }): decision is LlmFinalDecision {
   return decision.type === 'final';
+}
+
+async function resolveResearchArtifacts(
+  decision: LlmFinalDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  runResearch: typeof runDeepResearch = runDeepResearch
+): Promise<LlmFinalDecision['researchArtifacts']> {
+  if (decision.researchTopics.length === 0) return decision.researchArtifacts;
+  return runResearch({
+    topics: decision.researchTopics,
+    mainTitle: decision.title,
+    mainMarkdown: decision.markdown,
+    sessionMessages: session,
+  }, undefined, reportProgress);
+}
+
+async function prepareSessionTurn(reqData: DistillRequest): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  if (reqData.reset) await resetSession();
+  console.log(`[distill] ${getRequestLogLabel(reqData.resume)}: ${reqData.text}`);
+  return prepareUserTurn(reqData.text, reqData.resume === true);
+}
+
+async function resolveDecision(
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  makeDecisionFn: typeof makeDecision = makeDecision
+): Promise<ReturnType<typeof makeDecision>> {
+  return makeDecisionFn(session, reportProgress);
+}
+
+async function finalizeDecision(
+  decision: LlmFinalDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  deps: ProcessDistillDeps
+): Promise<DistillApiResponse> {
+  const researchArtifacts = await resolveResearchArtifacts(
+    decision,
+    session,
+    reportProgress,
+    deps.runDeepResearch ?? runDeepResearch
+  );
+
+  return handleComplete({
+    ...decision,
+    researchArtifacts,
+  }, session, reportProgress, deps.runFinalizeWritePipeline);
+}
+
+async function resolveDistillOutcome(
+  decision: ReturnType<typeof makeDecision> extends Promise<infer Result> ? Result : never,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  deps: ProcessDistillDeps
+): Promise<DistillApiResponse> {
+  return isFinalDecision(decision)
+    ? finalizeDecision(decision, session, reportProgress, deps)
+    : handleContinue(decision);
 }
 
 function buildTranscript(session: Array<{ role: 'user' | 'assistant'; content: string }>): string {
@@ -38,7 +102,8 @@ function buildRawText(session: Array<{ role: 'user' | 'assistant'; content: stri
 async function handleComplete(
   decision: LlmFinalDecision,
   session: Array<{ role: 'user' | 'assistant'; content: string }>,
-  reportProgress: LlmActivityReporter
+  reportProgress: LlmActivityReporter,
+  finalizeWritePipeline: typeof runFinalizeWritePipeline = runFinalizeWritePipeline
 ): Promise<DistillApiResponse> {
   console.log('[distill] 🏁 AI 决定收工，正在固化资产...');
   const tokenUsage = getSessionTokenUsage();
@@ -48,7 +113,7 @@ async function handleComplete(
     message: '正在通过 MCP 固化 Obsidian 资产并创建提醒',
   });
 
-  const artifactBundle = await runFinalizeWritePipeline({
+  const artifactBundle = await finalizeWritePipeline({
     title: decision.title || 'untitled-idea',
     markdown: decision.markdown,
     milestone: decision.milestone,
@@ -59,6 +124,7 @@ async function handleComplete(
     tokenUsage,
   });
 
+  await appendToSession('assistant', decision.message);
   await markSessionFinished();
   return {
     status: 'FINISH',
@@ -83,52 +149,16 @@ async function handleContinue(decision: { message: string }): Promise<DistillApi
   return { status: 'CONTINUE', text: decision.message };
 }
 
-function formatLogValue(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function formatOperationLog(event: Extract<LlmActivityEvent, { type: 'progress' }>): string {
-  if (!event.operationId) return '';
-  return [
-    `\nCall ID: ${event.operationId}`,
-    `Input:\n${formatLogValue(event.input)}`,
-    ...(event.output === undefined ? [] : [`Output:\n${formatLogValue(event.output)}`]),
-  ].join('\n');
-}
-
-function logProgress(event: LlmActivityEvent): void {
-  if (event.type !== 'progress') return;
-  console.log(
-    `[clarification] Progress (${event.phase}): ${event.message}`
-    + (event.details ? `\n${event.details}` : '')
-    + formatOperationLog(event)
-  );
-}
-
 function getRequestLogLabel(resume: boolean | undefined): string {
   return resume ? '▶️ Resume' : '📥 User';
 }
 
 export async function processDistill(
   reqData: DistillRequest,
-  reportProgress: LlmActivityReporter
+  reportProgress: LlmActivityReporter,
+  deps: ProcessDistillDeps = {}
 ): Promise<DistillApiResponse> {
-  if (reqData.reset) await resetSession();
-
-  console.log(`[distill] ${getRequestLogLabel(reqData.resume)}: ${reqData.text}`);
-  const session = await prepareUserTurn(reqData.text, reqData.resume === true);
-
-  const reportActivity = (event: LlmActivityEvent): void => {
-    if (event.type === 'usage') addSessionTokenUsage(event.usage);
-    logProgress(event);
-    reportProgress(event);
-  };
-  const decision = await makeDecision(session, reportActivity);
-
-  if (isFinalDecision(decision)) return handleComplete(decision, session, reportProgress);
-  return handleContinue(decision);
+  const session = await prepareSessionTurn(reqData);
+  const decision = await resolveDecision(session, reportProgress, deps.makeDecision ?? makeDecision);
+  return resolveDistillOutcome(decision, session, reportProgress, deps);
 }

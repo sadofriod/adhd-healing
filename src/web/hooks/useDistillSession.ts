@@ -3,6 +3,7 @@ import type {
   DistillApiResponse,
   LlmActivityEvent,
   LlmUsageEvent,
+  SessionHistoryItem,
 } from '../../types';
 import { isRecoverableNetworkError } from '../../services/network-error';
 import { addTokenUsage, EMPTY_TOKEN_USAGE } from '../../services/token-usage';
@@ -19,6 +20,7 @@ type DistillSessionState = {
   readonly errorMessage: string | null;
   readonly executionStatus: ExecutionStatus;
   readonly progressEntries: readonly ProgressEntry[];
+  readonly loadSession: (session: SessionHistoryItem) => void;
   readonly resetSession: () => void;
   readonly resumeTask: () => Promise<void>;
   readonly submitText: (text: string) => Promise<void>;
@@ -77,6 +79,23 @@ function createInitialConversation(): ConversationState {
   return {
     prompt: INITIAL_PROMPT,
     entries: [createTimelineEntry('assistant', INITIAL_PROMPT, 0)],
+    finalText: null,
+    finalTokenUsage: null,
+  };
+}
+
+function createConversationFromHistory(session: SessionHistoryItem): ConversationState {
+  let turnIndex = 0;
+  const entries = session.messages.map(message => {
+    if (message.role === 'user') turnIndex += 1;
+    return createTimelineEntry(message.role, message.content, turnIndex);
+  });
+  const latestAssistant = [...session.messages]
+    .reverse()
+    .find(message => message.role === 'assistant');
+  return {
+    prompt: latestAssistant?.content ?? INITIAL_PROMPT,
+    entries,
     finalText: null,
     finalTokenUsage: null,
   };
@@ -190,10 +209,7 @@ export function useDistillSession(): DistillSessionState {
     await runTask(task, reset, resume, {
       onActivity: event => {
         if (event.type === 'usage') task.usageEvents.push(event);
-        setProgressEntries(current => [
-          ...current,
-          { id: crypto.randomUUID(), ...event },
-        ]);
+        setProgressEntries(current => [...current, { id: crypto.randomUUID(), ...event }]);
       },
       onError: error => failTask(error),
       onPause: () => pauseTask(task),
@@ -239,15 +255,17 @@ export function useDistillSession(): DistillSessionState {
     setExecutionStatus('idle');
   }
 
-  return {
-    conversation,
-    errorMessage,
-    executionStatus,
-    progressEntries,
-    resetSession,
-    resumeTask,
-    submitText,
-  };
+  function loadSession(session: SessionHistoryItem): void {
+    setConversation(createConversationFromHistory(session));
+    setErrorMessage(null);
+    setPendingReset(false);
+    setProgressEntries([]);
+    pendingTaskRef.current = null;
+    setExecutionStatus('idle');
+  }
+
+  return { conversation, errorMessage, executionStatus, progressEntries,
+    loadSession, resetSession, resumeTask, submitText };
 }
 
 function appendUserEntry(

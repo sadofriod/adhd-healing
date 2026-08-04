@@ -1,5 +1,23 @@
 export type WorkflowStatus = 'CONTINUE' | 'FINISH' | 'PAUSED';
 
+export type SessionHistoryStatus = 'ACTIVE' | 'FINISHED' | 'ABANDONED';
+
+export type SessionHistoryMessage = {
+  readonly role: 'user' | 'assistant';
+  readonly content: string;
+};
+
+export type SessionHistoryItem = {
+  readonly id: string;
+  readonly status: SessionHistoryStatus;
+  readonly title: string;
+  readonly messages: readonly SessionHistoryMessage[];
+  readonly tokenUsage: LlmTokenUsage;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly finishedAt: string | null;
+};
+
 export type DistillRequest = {
   readonly text: string;
   readonly reset: boolean;
@@ -102,4 +120,4 @@ export type LlmFinalDecision = LlmFinalDecisionDraft & {
   readonly researchArtifacts: readonly DeepResearchArtifact[];
 };
 
-export type LlmDecision = LlmClarifyDecision | LlmFinalDecision;
+export type LlmDecision = LlmClarifyDecision | LlmProgressDecision | LlmFinalDecision;

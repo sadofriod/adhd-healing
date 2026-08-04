@@ -1,13 +1,20 @@
-import type { LlmDecision } from '../../types';
+import type {
+  LlmDecision,
+  LlmFinalDecision,
+  LlmFinalDecisionDraft,
+  LlmActivityReporter,
+} from '../../types';
 import { classifyArchiveDocument } from './archive';
 import { parseDecision } from './decision';
 import { generateDecisionText } from './decision-generation';
 import type { SessionMessage } from './types';
 
+const ignoreActivity: LlmActivityReporter = () => undefined;
+
 async function attachArchiveClassification(
-  decision: Extract<LlmDecision, { type: 'final' }>,
+  decision: LlmFinalDecisionDraft,
   sessionMessages: SessionMessage[]
-): Promise<LlmDecision> {
+): Promise<LlmFinalDecision> {
   const archive = await classifyArchiveDocument({
     title: decision.title,
     markdown: decision.markdown,
@@ -17,11 +24,15 @@ async function attachArchiveClassification(
   return {
     ...decision,
     archive,
+    researchArtifacts: [],
   };
 }
 
-export async function makeDecision(sessionMessages: SessionMessage[]): Promise<LlmDecision> {
-  const rawText = await generateDecisionText(sessionMessages);
+export async function makeDecision(
+  sessionMessages: SessionMessage[],
+  reportActivity: LlmActivityReporter = ignoreActivity
+): Promise<LlmDecision> {
+  const rawText = await generateDecisionText(sessionMessages, reportActivity);
   const decision = parseDecision(rawText);
 
   if (decision.type !== 'final') return decision;

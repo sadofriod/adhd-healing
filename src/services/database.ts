@@ -2,7 +2,14 @@ import { PrismaClient } from '@prisma/client';
 import { resolve } from 'path';
 
 function getDatabaseUrl(): string {
-  return Bun.env.DATABASE_URL ?? `file:${resolve(process.cwd(), 'data/sessions.db')}`;
+  const fallbackUrl = `file:${resolve(process.cwd(), 'data/sessions.db')}`;
+  const rawDatabaseUrl = Bun.env.DATABASE_URL?.trim();
+
+  if (!rawDatabaseUrl) return fallbackUrl;
+  if (rawDatabaseUrl.startsWith('file:')) return rawDatabaseUrl;
+  if (/^[a-z][a-z\d+.-]*:/i.test(rawDatabaseUrl)) return fallbackUrl;
+
+  return `file:${resolve(process.cwd(), rawDatabaseUrl)}`;
 }
 
 const globalDatabase = globalThis as typeof globalThis & {

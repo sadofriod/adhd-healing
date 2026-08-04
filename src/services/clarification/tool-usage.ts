@@ -1,4 +1,4 @@
-type ToolCallStep = {
+export type ToolCallStep = {
   readonly toolCalls: readonly {
     readonly toolCallId: string;
     readonly toolName: string;
@@ -6,7 +6,7 @@ type ToolCallStep = {
   }[];
 };
 
-type ToolResultStep = {
+export type ToolResultStep = {
   readonly toolResults: readonly {
     readonly toolCallId: string;
     readonly toolName: string;

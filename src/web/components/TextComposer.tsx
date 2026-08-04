@@ -1,5 +1,6 @@
 import type { FormEvent, JSX } from 'react';
 import { useState } from 'react';
+import { ArrowUp } from 'lucide-react';
 
 type TextComposerProps = {
   readonly disabled: boolean;
@@ -21,32 +22,22 @@ export function TextComposer(props: TextComposerProps): JSX.Element {
   }
 
   return (
-    <section className="panel-surface composer-card">
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Text input</p>
-          <h2>手动输入</h2>
-        </div>
-        <span className="mode-pill">JSON</span>
-      </div>
-
-      <form className="composer-form" onSubmit={handleSubmit}>
-        <label className="input-label" htmlFor="distill-text">
-          当前这一轮你想补充什么？
-        </label>
+    <form className="composer-form" onSubmit={handleSubmit}>
+      <div className="composer-input-wrap">
+        <label className="sr-only" htmlFor="distill-text">输入回复</label>
         <textarea
           id="distill-text"
           className="composer-textarea"
           disabled={props.disabled}
           onChange={event => setValue(event.currentTarget.value)}
           placeholder={props.prompt}
-          rows={8}
+          rows={3}
           value={value}
         />
-        <button className="primary-button" disabled={!canSubmit} type="submit">
-          发送文字
+        <button aria-label="发送" className="send-button" disabled={!canSubmit} title="发送" type="submit">
+          <ArrowUp aria-hidden="true" size={20} />
         </button>
-      </form>
-    </section>
+      </div>
+    </form>
   );
 }

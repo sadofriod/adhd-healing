@@ -1,6 +1,6 @@
 import { buildObsidianNote, type McpToolExecutor, type ObsidianNote } from './obsidian';
 import { executeMcpTool } from './mcp';
-import { buildSafeVaultTitle, buildVaultFilename } from './vault';
+import { buildSafeTitle, buildVaultFilename } from './vault/filename';
 import { config } from '../config/env';
 import type { DeepResearchArtifact } from '../types';
 
@@ -33,7 +33,7 @@ function getDirectoryPath(title: string, now: Date): string {
 }
 
 function getUniqueStem(title: string, used: Map<string, number>): string {
-  const base = buildSafeVaultTitle(title);
+  const base = buildSafeTitle(title);
   const key = base.toLocaleLowerCase();
   const count = (used.get(key) ?? 0) + 1;
   used.set(key, count);
