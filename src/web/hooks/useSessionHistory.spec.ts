@@ -31,15 +31,16 @@ describe('session history client', () => {
     }];
     setFetchMock(async () => Response.json(sessions));
 
-    await expect(fetchSessionHistory()).resolves.toEqual(sessions);
+    await expect(fetchSessionHistory('zh')).resolves.toEqual(sessions);
   });
 
   test('activates an encoded session id', async () => {
     const fetchMock = setFetchMock(async () => new Response(null, { status: 204 }));
 
-    await activateSessionRequest('session/one');
+    await activateSessionRequest('session/one', 'zh');
 
     expect(fetchMock).toHaveBeenCalledWith('/sessions/session%2Fone/activate', {
+      headers: { 'X-Locale': 'zh' },
       method: 'POST',
     });
   });

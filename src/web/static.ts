@@ -1,3 +1,6 @@
+import { DEFAULT_LOCALE, type Locale } from '../i18n/locale';
+import { getServerMessage } from '../i18n/server-messages';
+
 type StaticAsset = {
   readonly fileName: string;
   readonly contentType: string;
@@ -17,20 +20,29 @@ function getAssetFile(fileName: string) {
   return Bun.file(new URL(`../../public/${fileName}`, import.meta.url));
 }
 
-function createMissingAssetResponse(fileName: string): Response {
-  return new Response(`Missing web asset: ${fileName}`, { status: 503 });
+async function getExistingAssetFile(fileName: string): Promise<Blob | null> {
+  const file = getAssetFile(fileName);
+  if (await file.exists()) return file;
+  return null;
 }
 
-export async function handleWebAsset(pathname: string): Promise<Response | null> {
-  const asset = getStaticAsset(pathname);
-  if (!asset) return null;
+function createMissingAssetResponse(fileName: string, locale: Locale): Response {
+  return new Response(`${getServerMessage(locale, 'missingWebAsset')}: ${fileName}`, { status: 503 });
+}
 
-  const file = getAssetFile(asset.fileName);
-  if (!(await file.exists())) {
-    return createMissingAssetResponse(asset.fileName);
-  }
-
+async function createAssetResponse(asset: StaticAsset, locale: Locale): Promise<Response> {
+  const file = await getExistingAssetFile(asset.fileName);
+  if (!file) return createMissingAssetResponse(asset.fileName, locale);
   return new Response(file, {
     headers: { 'Content-Type': asset.contentType },
   });
+}
+
+export async function handleWebAsset(
+  pathname: string,
+  locale: Locale = DEFAULT_LOCALE
+): Promise<Response | null> {
+  const asset = getStaticAsset(pathname);
+  if (!asset) return null;
+  return createAssetResponse(asset, locale);
 }

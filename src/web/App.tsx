@@ -1,5 +1,5 @@
 import { History, MessageCircleMore, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import { ConversationTimeline } from './components/ConversationTimeline';
 import { LlmProgressPanel } from './components/LlmProgressPanel';
@@ -7,9 +7,12 @@ import { SessionHistoryPanel } from './components/SessionHistoryPanel';
 import { TextComposer } from './components/TextComposer';
 import { ToolCrashPanel } from './components/ToolCrashPanel';
 import { useDistillSession } from './hooks/useDistillSession';
+import { useLocale } from './hooks/useLocale';
 import { useSessionHistory } from './hooks/useSessionHistory';
+import { getWebMessage, type WebMessageKey } from './i18n/messages';
 import { collectToolCrashes } from './tool-crash';
 import type { SessionHistoryItem } from '../types';
+import type { Locale } from '../i18n/locale';
 
 function getErrorBannerClassName(errorMessage: string | null): string {
   return errorMessage ? 'error-banner' : 'error-banner is-hidden';
@@ -26,6 +29,8 @@ function isComposerDisabled(isSubmitting: boolean, isPaused: boolean): boolean {
 
 function renderHistoryPanel(
   isOpen: boolean,
+  locale: Locale,
+  intlLocale: 'zh-CN' | 'en-US',
   history: ReturnType<typeof useSessionHistory>,
   onClose: () => void,
   onContinue: (session: SessionHistoryItem) => Promise<void>
@@ -35,6 +40,8 @@ function renderHistoryPanel(
     <SessionHistoryPanel
       errorMessage={history.errorMessage}
       isLoading={history.isLoading}
+      intlLocale={intlLocale}
+      locale={locale}
       onClose={onClose}
       onContinue={onContinue}
       sessions={history.sessions}
@@ -44,17 +51,20 @@ function renderHistoryPanel(
 
 function renderResumeAction(
   isPaused: boolean,
-  resumeTask: () => Promise<void>
+  resumeTask: () => Promise<void>,
+  label: string
 ): JSX.Element | null {
   if (!isPaused) return null;
   return (
     <button className="resume-action" onClick={() => void resumeTask()} type="button">
-      继续执行暂停的任务
+      {label}
     </button>
   );
 }
 
 export function App(): JSX.Element {
+  const { intlLocale, locale, toggleLocale } = useLocale();
+  const t = (key: WebMessageKey): string => getWebMessage(locale, key);
   const {
     conversation,
     errorMessage,
@@ -64,8 +74,8 @@ export function App(): JSX.Element {
     resetSession,
     resumeTask,
     submitText,
-  } = useDistillSession();
-  const history = useSessionHistory();
+  } = useDistillSession(locale);
+  const history = useSessionHistory(locale);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const isSubmitting = executionStatus === 'running';
   const isPaused = executionStatus === 'paused';
@@ -73,6 +83,10 @@ export function App(): JSX.Element {
     () => collectToolCrashes(progressEntries, errorMessage),
     [progressEntries, errorMessage]
   );
+
+  useEffect(() => {
+    document.documentElement.lang = intlLocale;
+  }, [intlLocale]);
 
   async function openHistory(): Promise<void> {
     setIsHistoryOpen(true);
@@ -96,13 +110,23 @@ export function App(): JSX.Element {
       <header className="app-header">
         <div className="brand-mark"><MessageCircleMore aria-hidden="true" size={20} /></div>
         <div>
-          <p className="app-name">Idea Distiller</p>
-          <p className="app-subtitle">把想法聊成下一步行动</p>
+          <p className="app-name">{t('appName')}</p>
+          <p className="app-subtitle">{t('appSubtitle')}</p>
         </div>
+        <button
+          className="icon-button locale-toggle"
+          onClick={toggleLocale}
+          title={t('localeToggleTitle')}
+          type="button"
+        >
+          {t('localeToggleLabel')}
+        </button>
       </header>
       <main className={getWorkspaceClassName(isHistoryOpen)}>
         {renderHistoryPanel(
           isHistoryOpen,
+          locale,
+          intlLocale,
           history,
           () => setIsHistoryOpen(false),
           continueSession
@@ -110,27 +134,28 @@ export function App(): JSX.Element {
         <section className="conversation-workspace">
           <header className="workspace-header">
             <div>
-              <span className="workspace-kicker">Conversation</span>
-              <h1>持续澄清</h1>
+              <span className="workspace-kicker">{t('conversationKicker')}</span>
+              <h1>{t('conversationTitle')}</h1>
             </div>
             <div className="workspace-actions">
-              <button className="icon-button" onClick={() => void openHistory()} title="历史会话" type="button">
+              <button className="icon-button" onClick={() => void openHistory()} title={t('historyButtonTitle')} type="button">
                 <History aria-hidden="true" size={19} />
               </button>
-              <button className="icon-button" onClick={startNewSession} title="新会话" type="button">
+              <button className="icon-button" onClick={startNewSession} title={t('newSessionButtonTitle')} type="button">
                 <Plus aria-hidden="true" size={20} />
               </button>
             </div>
           </header>
           <div className="conversation-scroll" aria-live="polite">
-            <ConversationTimeline entries={conversation.entries} />
-            <LlmProgressPanel entries={progressEntries} status={executionStatus} />
+            <ConversationTimeline entries={conversation.entries} locale={locale} />
+            <LlmProgressPanel entries={progressEntries} locale={locale} status={executionStatus} />
           </div>
-          <ToolCrashPanel crashes={crashEvents} />
+          <ToolCrashPanel crashes={crashEvents} locale={locale} />
           <p className={getErrorBannerClassName(errorMessage)}>{String(errorMessage ?? '')}</p>
-          {renderResumeAction(isPaused, resumeTask)}
+          {renderResumeAction(isPaused, resumeTask, t('resumePausedTask'))}
           <TextComposer
             disabled={isComposerDisabled(isSubmitting, isPaused)}
+            locale={locale}
             prompt={conversation.prompt}
             onSubmit={submitText}
           />

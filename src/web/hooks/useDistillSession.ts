@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { Locale } from '../../i18n/locale';
 import type {
   DistillApiResponse,
   LlmActivityEvent,
@@ -8,6 +9,7 @@ import type {
 import { isRecoverableNetworkError } from '../../services/network-error';
 import { addTokenUsage, EMPTY_TOKEN_USAGE } from '../../services/token-usage';
 import { readDistillStream } from '../distill-stream';
+import { getWebMessage } from '../i18n/messages';
 import type {
   ConversationState,
   ExecutionStatus,
@@ -46,9 +48,6 @@ type CompletionFields = Pick<
   'finalText' | 'finalTokenUsage' | 'prompt'
 >;
 
-const INITIAL_PROMPT = '先把你的想法说出来。我会逐轮追问，直到变成一份可执行的结果。';
-const COMPLETED_PROMPT = '这一轮已经完成。准备好了就直接开始下一轮新的想法。';
-
 function createTimelineEntry(
   role: 'assistant' | 'user',
   content: string,
@@ -75,16 +74,18 @@ function createPendingTask(text: string, turnIndex: number): PendingTask {
   };
 }
 
-function createInitialConversation(): ConversationState {
+function createInitialConversation(locale: Locale): ConversationState {
+  const initialPrompt = getWebMessage(locale, 'hookInitialPrompt');
   return {
-    prompt: INITIAL_PROMPT,
-    entries: [createTimelineEntry('assistant', INITIAL_PROMPT, 0)],
+    prompt: initialPrompt,
+    entries: [createTimelineEntry('assistant', initialPrompt, 0)],
     finalText: null,
     finalTokenUsage: null,
   };
 }
 
-function createConversationFromHistory(session: SessionHistoryItem): ConversationState {
+function createConversationFromHistory(session: SessionHistoryItem, locale: Locale): ConversationState {
+  const initialPrompt = getWebMessage(locale, 'hookInitialPrompt');
   let turnIndex = 0;
   const entries = session.messages.map(message => {
     if (message.role === 'user') turnIndex += 1;
@@ -94,7 +95,7 @@ function createConversationFromHistory(session: SessionHistoryItem): Conversatio
     .reverse()
     .find(message => message.role === 'assistant');
   return {
-    prompt: latestAssistant?.content ?? INITIAL_PROMPT,
+    prompt: latestAssistant?.content ?? initialPrompt,
     entries,
     finalText: null,
     finalTokenUsage: null,
@@ -109,19 +110,23 @@ async function fetchDistill(
   text: string,
   reset: boolean,
   resume: boolean,
+  locale: Locale,
   onActivity: (event: LlmActivityEvent) => void
 ): Promise<DistillApiResponse> {
   const response = await fetch('/distill', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Locale': locale,
+    },
     body: JSON.stringify({ text, reset, resume }),
   });
-  return readDistillStream(response, onActivity);
+  return readDistillStream(response, onActivity, locale);
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, locale: Locale): string {
   if (error instanceof Error) return error.message;
-  return '请求失败，请稍后重试。';
+  return getWebMessage(locale, 'hookRequestFailed');
 }
 
 function handleTaskError(error: unknown, callbacks: TaskCallbacks): void {
@@ -136,10 +141,11 @@ async function runTask(
   task: PendingTask,
   reset: boolean,
   resume: boolean,
+  locale: Locale,
   callbacks: TaskCallbacks
 ): Promise<void> {
   try {
-    const result = await fetchDistill(task.text, reset, resume, callbacks.onActivity);
+    const result = await fetchDistill(task.text, reset, resume, locale, callbacks.onActivity);
     if (result.status === 'PAUSED') {
       callbacks.onPause();
       return;
@@ -152,11 +158,12 @@ async function runTask(
 
 function pauseConversation(
   current: ConversationState,
-  task: PendingTask
+  task: PendingTask,
+  locale: Locale
 ): ConversationState {
   return {
     ...current,
-    prompt: '网络连接中断，任务已暂停。连接恢复后可继续执行。',
+    prompt: getWebMessage(locale, 'hookPausedPrompt'),
     entries: appendUserEntry(current.entries, task.userEntry),
   };
 }
@@ -164,21 +171,22 @@ function pauseConversation(
 function completeConversation(
   current: ConversationState,
   task: PendingTask,
-  result: CompletedDistillResponse
+  result: CompletedDistillResponse,
+  locale: Locale
 ): ConversationState {
   const assistantEntry = createTimelineEntry(
     'assistant', result.text, task.userEntry.turnIndex, task.usageEvents
   );
   return {
-    ...getCompletionFields(result),
+    ...getCompletionFields(result, locale),
     entries: appendTaskEntries(current.entries, task.userEntry, assistantEntry),
   };
 }
 
-function getCompletionFields(result: CompletedDistillResponse): CompletionFields {
+function getCompletionFields(result: CompletedDistillResponse, locale: Locale): CompletionFields {
   if (result.status === 'FINISH') {
     return {
-      prompt: COMPLETED_PROMPT,
+      prompt: getWebMessage(locale, 'hookCompletedPrompt'),
       finalText: result.text,
       finalTokenUsage: result.tokenUsage,
     };
@@ -193,8 +201,8 @@ function getProgressForExecution(
   return resume ? current : [];
 }
 
-export function useDistillSession(): DistillSessionState {
-  const [conversation, setConversation] = useState<ConversationState>(createInitialConversation);
+export function useDistillSession(locale: Locale): DistillSessionState {
+  const [conversation, setConversation] = useState<ConversationState>(() => createInitialConversation(locale));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus>('idle');
   const [pendingReset, setPendingReset] = useState(false);
@@ -206,7 +214,7 @@ export function useDistillSession(): DistillSessionState {
     setErrorMessage(null);
     setPendingReset(false);
     setProgressEntries(current => getProgressForExecution(current, resume));
-    await runTask(task, reset, resume, {
+    await runTask(task, reset, resume, locale, {
       onActivity: event => {
         if (event.type === 'usage') task.usageEvents.push(event);
         setProgressEntries(current => [...current, { id: crypto.randomUUID(), ...event }]);
@@ -219,18 +227,18 @@ export function useDistillSession(): DistillSessionState {
 
   function pauseTask(task: PendingTask): void {
     pendingTaskRef.current = task;
-    setConversation(current => pauseConversation(current, task));
+    setConversation(current => pauseConversation(current, task, locale));
     setExecutionStatus('paused');
   }
 
   function completeTask(task: PendingTask, result: CompletedDistillResponse): void {
-    setConversation(current => completeConversation(current, task, result));
+    setConversation(current => completeConversation(current, task, result, locale));
     pendingTaskRef.current = null;
     setExecutionStatus('idle');
   }
 
   function failTask(error: unknown): void {
-    setErrorMessage(getErrorMessage(error));
+    setErrorMessage(getErrorMessage(error, locale));
     setExecutionStatus('idle');
   }
 
@@ -247,7 +255,7 @@ export function useDistillSession(): DistillSessionState {
   }
 
   function resetSession(): void {
-    setConversation(createInitialConversation());
+    setConversation(createInitialConversation(locale));
     setErrorMessage(null);
     setPendingReset(true);
     setProgressEntries([]);
@@ -256,7 +264,7 @@ export function useDistillSession(): DistillSessionState {
   }
 
   function loadSession(session: SessionHistoryItem): void {
-    setConversation(createConversationFromHistory(session));
+    setConversation(createConversationFromHistory(session, locale));
     setErrorMessage(null);
     setPendingReset(false);
     setProgressEntries([]);

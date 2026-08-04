@@ -54,4 +54,15 @@ describe('session history routes', () => {
     expect(activated?.status).toBe('ACTIVE');
     expect(activated?.finishedAt).toBeNull();
   });
+
+  test('returns localized error when session is not found', async () => {
+    const response = await handleSessions(new Request('http://localhost/sessions/not-exist/activate', {
+      headers: { 'x-locale': 'en' },
+      method: 'POST',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual({ error: 'Session not found' });
+  });
 });

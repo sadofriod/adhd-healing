@@ -8,6 +8,8 @@ describe('SessionHistoryPanel', () => {
       <SessionHistoryPanel
         errorMessage={null}
         isLoading={false}
+        intlLocale="zh-CN"
+        locale="zh"
         onClose={() => undefined}
         onContinue={async () => undefined}
         sessions={[{
@@ -26,5 +28,22 @@ describe('SessionHistoryPanel', () => {
     expect(markup).toContain('已完成');
     expect(markup).toContain('完成后继续讨论');
     expect(markup).toContain('继续会话');
+  });
+
+  test('renders english labels when locale is en', () => {
+    const markup = renderToStaticMarkup(
+      <SessionHistoryPanel
+        errorMessage={null}
+        isLoading={true}
+        intlLocale="en-US"
+        locale="en"
+        onClose={() => undefined}
+        onContinue={async () => undefined}
+        sessions={[]}
+      />
+    );
+
+    expect(markup).toContain('Session history');
+    expect(markup).toContain('Loading...');
   });
 });

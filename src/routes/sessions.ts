@@ -1,4 +1,6 @@
 import { activateSession, listSessionHistory } from '../services/session';
+import { getRequestLocale, type Locale } from '../i18n/locale';
+import { getServerMessage } from '../i18n/server-messages';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return Response.json(data, { status });
@@ -14,25 +16,27 @@ async function handleSessionList(req: Request, pathname: string): Promise<Respon
   return jsonResponse(await listSessionHistory());
 }
 
-function activationResponse(wasActivated: boolean): Response {
+function activationResponse(wasActivated: boolean, locale: Locale): Response {
   if (wasActivated) return new Response(null, { status: 204 });
-  return jsonResponse({ error: 'Session not found' }, 404);
+  return jsonResponse({ error: getServerMessage(locale, 'sessionNotFound') }, 404);
 }
 
 async function handleSessionActivation(
   req: Request,
-  pathname: string
+  pathname: string,
+  locale: Locale
 ): Promise<Response | null> {
   if (req.method !== 'POST') return null;
   const sessionId = getSessionId(pathname);
   if (!sessionId) return null;
-  return activationResponse(await activateSession(sessionId));
+  return activationResponse(await activateSession(sessionId), locale);
 }
 
 export async function handleSessions(req: Request): Promise<Response> {
   const { pathname } = new URL(req.url);
+  const locale = getRequestLocale(req);
   const listResponse = await handleSessionList(req, pathname);
   if (listResponse) return listResponse;
-  return await handleSessionActivation(req, pathname)
-    ?? new Response('Method Not Allowed', { status: 405 });
+  return await handleSessionActivation(req, pathname, locale)
+    ?? new Response(getServerMessage(locale, 'methodNotAllowed'), { status: 405 });
 }

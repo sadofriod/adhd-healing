@@ -16,6 +16,7 @@
 - Obsidian 桌面应用无需常驻；Vault 文件系统可直接被写入。
 - Apple Reminders 仅保存时间戳、行动标题和 Obsidian 双链线索。
 - 在 `/` 提供调试用 React 网页客户端。
+- 前端界面与服务端 API 错误信息均支持中英文（通过 `x-locale` 或 `accept-language` 识别）。
 
 ## 平台边界
 
