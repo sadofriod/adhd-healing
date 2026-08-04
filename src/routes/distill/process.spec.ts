@@ -38,7 +38,7 @@ function buildFinalDecision(includeResearchTopics: boolean): LlmFinalDecision {
 describe('processDistill', () => {
   test('runs deep research before finalization when the final decision includes research topics', async () => {
     const researchInputs: Array<{ title: string; topics: LlmFinalDecision['researchTopics'] }> = [];
-    let finalizeInput: { researchArtifacts: unknown[] } | undefined;
+    let finalizeInput: { researchArtifacts: readonly unknown[] } | undefined;
 
     const response = await processDistill(REQUEST, () => undefined, {
       makeDecision: async () => buildFinalDecision(true),
@@ -52,7 +52,9 @@ describe('processDistill', () => {
         }];
       },
       runFinalizeWritePipeline: async input => {
-        finalizeInput = input as typeof finalizeInput;
+        finalizeInput = {
+          researchArtifacts: input.researchArtifacts,
+        };
         return {
           directoryPath: '/tmp/idea',
           mainLink: 'obsidian://idea',
@@ -71,7 +73,7 @@ describe('processDistill', () => {
 
   test('skips deep research when the final decision has no research topics', async () => {
     let runDeepResearchCalled = false;
-    let finalizeResearchArtifacts: unknown[] | undefined;
+    let finalizeResearchArtifacts: readonly unknown[] | undefined;
 
     const response = await processDistill(REQUEST, () => undefined, {
       makeDecision: async () => buildFinalDecision(false),
@@ -80,7 +82,7 @@ describe('processDistill', () => {
         return [];
       },
       runFinalizeWritePipeline: async input => {
-        finalizeResearchArtifacts = input.researchArtifacts as unknown[];
+        finalizeResearchArtifacts = input.researchArtifacts;
         return {
           directoryPath: '/tmp/idea',
           mainLink: 'obsidian://idea',

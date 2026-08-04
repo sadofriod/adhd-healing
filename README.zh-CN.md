@@ -4,6 +4,8 @@
 
 这是一个面向单用户、Mac 本地运行的 Obsidian-First 想法澄清与蒸馏网关。iPhone 快捷指令是主要使用入口，React 网页作为调试工具使用。服务端通过 DeepSeek API（Vercel AI SDK）进行多轮结构化追问；会话完成后，通过 MCP 将完整报告写入 Obsidian，并向 Apple Reminders 下发极简行动标题。
 
+系统现已支持纯终端 CLI 运行模式，可在不打开 Web UI 的情况下完成整轮澄清。
+
 ## 功能概述
 
 - 通过 `POST /distill` 接口接收 `{ text, reset }` 格式的文字输入，返回 `{ status, text }`。
@@ -16,6 +18,7 @@
 - Obsidian 桌面应用无需常驻；Vault 文件系统可直接被写入。
 - Apple Reminders 仅保存时间戳、行动标题和 Obsidian 双链线索。
 - 在 `/` 提供调试用 React 网页客户端。
+- 支持纯终端 CLI 模式，并内置会话命令：新会话、继续暂停会话、查看历史会话、切换历史会话。
 - 前端界面与服务端 API 错误信息均支持中英文（通过 `x-locale` 或 `accept-language` 识别）。
 
 ## 平台边界
@@ -119,7 +122,30 @@ curl -X POST http://localhost:5001/distill \
 
 在浏览器中打开 `http://localhost:5001/`，可直接与 `/distill` 接口交互。
 
-### 7. Obsidian 归档
+### 7. 纯终端 CLI 模式
+
+```bash
+pnpm run start:cli
+```
+
+可选启动参数：
+
+```bash
+pnpm run start:cli -- --new
+pnpm run start:cli -- --session <session-id>
+pnpm run start:cli -- --help
+```
+
+CLI 内置命令：
+
+- `/new` 开启新会话
+- `/continue` 继续当前会话中的暂停任务
+- `/history` 查看历史会话
+- `/switch <id|n>` 按会话 id 或列表序号切换历史会话
+- `/help` 查看命令帮助
+- `/exit` 退出 CLI
+
+### 8. Obsidian 归档
 
 每个完成的对话都会在以 `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` 为根目录
 的 Vault 中创建一个带时间戳的独立产物目录。目录内包含主报告，以及所有

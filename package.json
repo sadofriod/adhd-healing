@@ -10,7 +10,9 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "postinstall": "DATABASE_URL=file:../data/sessions.db prisma generate",
-    "start": "pnpm run build:web && bun --env-file=.env scripts/start.ts",
+    "start": "pnpm run build:web && pnpm run start:gateway",
+    "start:gateway": "bun --env-file=.env scripts/start.ts",
+    "start:cli": "bun --env-file=.env scripts/cli.ts",
     "archive:reclassify": "bun --env-file=.env scripts/reclassify-local-vault.ts",
     "test": "DATABASE_URL=file:/tmp/adhd-healing-test.db prisma migrate deploy && DATABASE_URL=file:/tmp/adhd-healing-test.db DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."

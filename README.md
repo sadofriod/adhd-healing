@@ -4,6 +4,8 @@
 
 Obsidian-first idea clarification and distillation gateway for a single Mac-hosted workflow. An iPhone Shortcut is the primary input interface; a React web client is available as a debug tool. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report through an Obsidian MCP server and sends only a concise action reference to Apple Reminders.
 
+The system now supports a pure terminal CLI mode, so you can run full clarification loops without opening the web UI.
+
 ## What It Does
 
 - Accepts `POST /distill` with `{ text, reset }` and returns `{ status: "CONTINUE" | "FINISH", text }`.
@@ -16,6 +18,7 @@ Obsidian-first idea clarification and distillation gateway for a single Mac-host
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a debug React web client at `/`.
+- Supports a pure terminal CLI mode with built-in session controls: new session, continue paused turn, list history, and switch history session.
 - Supports Chinese/English localization in both the web UI and server-generated API error messages (`x-locale` / `accept-language`).
 
 ## Platform Scope
@@ -124,7 +127,30 @@ See [docs/setup.md](./docs/setup.md) for the full iPhone Shortcuts configuration
 
 Open `http://localhost:5001/` in a browser. The web client sends text turns to the same `/distill` endpoint.
 
-### 7. Obsidian archive
+### 7. Pure terminal CLI mode
+
+```bash
+pnpm run start:cli
+```
+
+Optional startup flags:
+
+```bash
+pnpm run start:cli -- --new
+pnpm run start:cli -- --session <session-id>
+pnpm run start:cli -- --help
+```
+
+Interactive commands inside CLI:
+
+- `/new` start a new session
+- `/continue` resume the paused turn in current session
+- `/history` list history sessions
+- `/switch <id|n>` switch to a history session by id or list index
+- `/help` show command help
+- `/exit` exit CLI mode
+
+### 8. Obsidian archive
 
 Each finished conversation creates a timestamped artifact directory under the
 Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. The directory contains
@@ -184,7 +210,9 @@ pnpm exec tsc --noEmit
 .
 ├── docs/                  Product docs and setup guides
 ├── public/                HTML shell and built frontend assets
+├── scripts/cli.ts         Pure terminal CLI entrypoint
 ├── src/config/            Environment parsing
+├── src/cli/               CLI loop, command parsing, and terminal I/O
 ├── src/routes/distill/    Request validation and orchestration
 ├── src/services/          LLM client, session, vault, reminders
 ├── src/utils/             Context and markdown helpers
