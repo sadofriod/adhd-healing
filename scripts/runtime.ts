@@ -1,4 +1,4 @@
-import { mkdir } from 'fs/promises';
+import { mkdir, stat } from 'fs/promises';
 import { resolve } from 'path';
 import { config } from '../src/config/env';
 import { loadMcpConfig, type McpConfig } from '../src/services/mcpConfig';
@@ -58,6 +58,27 @@ async function resolveObsidianEndpoint(): Promise<RuntimeEndpoint> {
     healthUrl: new URL('/health', url).href,
     port: getUrlPort(url),
   };
+}
+
+function getRootObsidianPath(cwd: string): string {
+  return resolve(cwd, '.obsidian');
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    const entry = await stat(path);
+    return entry.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+export async function assertNoRootObsidianWorkspace(cwd: string = process.cwd()): Promise<void> {
+  const rootObsidianPath = getRootObsidianPath(cwd);
+  if (!await isDirectory(rootObsidianPath)) return;
+  throw new Error(
+    `[runtime] Unexpected root .obsidian directory detected at ${rootObsidianPath}. Remove it and keep Obsidian workspaces under the configured vault path only: ${config.obsidianVaultPath}`
+  );
 }
 
 export function spawnManagedProcess(
@@ -153,6 +174,7 @@ export async function withManagedRuntime<T>(
   run: (runtime: { readonly mcp: ManagedProcess }) => Promise<T>,
   spawn: ProcessSpawner = spawnManagedProcess
 ): Promise<T> {
+  await assertNoRootObsidianWorkspace();
   await deployDatabaseMigrations(spawn);
   const endpoint = await resolveObsidianEndpoint();
   await assertMcpEndpointAvailable(endpoint.healthUrl);
