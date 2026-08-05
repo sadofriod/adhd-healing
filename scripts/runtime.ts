@@ -5,7 +5,12 @@ import { loadMcpConfig, type McpConfig } from '../src/services/mcpConfig';
 
 export type ManagedProcess = ReturnType<typeof Bun.spawn>;
 
-type ProcessSpawner = (command: string[], environment?: Record<string, string | undefined>) => ManagedProcess;
+type SpawnOptions = {
+  readonly cwd?: string;
+  readonly environment?: Record<string, string | undefined>;
+};
+
+type ProcessSpawner = (command: string[], options?: SpawnOptions) => ManagedProcess;
 
 type RuntimeEndpoint = {
   readonly healthUrl: string;
@@ -57,11 +62,11 @@ async function resolveObsidianEndpoint(): Promise<RuntimeEndpoint> {
 
 export function spawnManagedProcess(
   command: string[],
-  environment?: Record<string, string | undefined>
+  options?: SpawnOptions
 ): ManagedProcess {
   return Bun.spawn(command, {
-    cwd: process.cwd(),
-    env: environment ?? process.env,
+    cwd: options?.cwd ?? process.cwd(),
+    env: options?.environment ?? process.env,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -87,8 +92,10 @@ function resolveSqliteDatabaseUrl(): string {
 async function deployDatabaseMigrations(spawn: ProcessSpawner): Promise<void> {
   const databaseUrl = resolveSqliteDatabaseUrl();
   const migration = spawn(['pnpm', 'exec', 'prisma', 'migrate', 'deploy'], {
-    ...process.env,
-    DATABASE_URL: databaseUrl,
+    environment: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+    },
   });
   const exitCode = await migration.exited;
   if (exitCode !== 0) throw new Error(`database migration failed with code ${exitCode}`);
@@ -151,9 +158,12 @@ export async function withManagedRuntime<T>(
   await assertMcpEndpointAvailable(endpoint.healthUrl);
   await mkdir(config.obsidianVaultPath, { recursive: true });
   const mcp = spawn(['pnpm', 'exec', 'obsidian-mcp-server'], {
-    ...process.env,
-    VAULT_PATH: config.obsidianVaultPath,
-    PORT: endpoint.port,
+    cwd: config.obsidianVaultPath,
+    environment: {
+      ...process.env,
+      VAULT_PATH: config.obsidianVaultPath,
+      PORT: endpoint.port,
+    },
   });
 
   try {

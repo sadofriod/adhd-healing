@@ -29,3 +29,6 @@ data/*.db
 data/*.db-journal
 data/*.db-shm
 data/*.db-wal
+
+# Obsidian workspace metadata (must not live at repo root)
+.obsidian/
