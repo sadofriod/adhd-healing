@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { assertNoRootObsidianWorkspace } from './runtime';
+import { parseMcpConfig } from '../src/services/mcpConfig';
+import { assertNoRootObsidianWorkspace, prefetchNpxMcpDependencies } from './runtime';
 
 const tempDirs: string[] = [];
 const originalCwd = process.cwd();
@@ -46,5 +47,54 @@ describe('runtime guard for root .obsidian', () => {
     await expect(assertNoRootObsidianWorkspace(cwd)).rejects.toThrow(
       'Unexpected root .obsidian directory detected'
     );
+  });
+});
+
+describe('MCP dependency prefetch', () => {
+  test('prefetches dependencies for npx MCP servers during startup', async () => {
+    const calls: Array<{ command: string[]; environment: Record<string, string | undefined> | undefined }> = [];
+    const spawn = (
+      command: string[],
+      options?: { readonly environment?: Record<string, string | undefined> }
+    ) => {
+      calls.push({ command, environment: options?.environment });
+      return {
+        exited: Promise.resolve(0),
+      } as ReturnType<typeof Bun.spawn>;
+    };
+
+    const mcpConfig = parseMcpConfig({
+      servers: {
+        cloakbrowser: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', 'cloakbrowser-mcp@1.10.0'],
+          env: {
+            NPM_CONFIG_CACHE: '.npm-cache',
+          },
+        },
+        github: {
+          type: 'stdio',
+          command: 'docker',
+          args: ['run'],
+        },
+      },
+    });
+
+    await prefetchNpxMcpDependencies(mcpConfig, spawn);
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].command).toEqual([
+      'npm',
+      'exec',
+      '--yes',
+      '--package',
+      'cloakbrowser-mcp@1.10.0',
+      '--',
+      'node',
+      '-e',
+      'process.exit(0)',
+    ]);
+    expect(calls[0].environment?.NPM_CONFIG_CACHE).toBe('.npm-cache');
   });
 });

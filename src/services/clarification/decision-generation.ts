@@ -7,7 +7,7 @@ import { reportTokenUsages } from '../token-usage';
 import { SYSTEM_PROMPT } from './agent';
 import { buildDecisionPrompt } from './prompts';
 import { collectToolActivities, type ToolActivity } from './tool-usage';
-import type { LlmActivityReporter } from '../../types';
+import type { LlmActivityReporter, LlmProgressDecision } from '../../types';
 import type { SessionMessage } from './types';
 import { DEFAULT_LOCALE, type Locale } from '../../i18n/locale';
 
@@ -15,11 +15,12 @@ const ignoreActivity: LlmActivityReporter = () => undefined;
 
 export function buildDecisionAgentPrompt(
   sessionMessages: SessionMessage[],
+  progress: LlmProgressDecision | undefined,
   locale: Locale = DEFAULT_LOCALE
 ): string {
   return buildDecisionPrompt(
     sessionMessages,
-    undefined,
+    progress,
     getSessionResearchMemory(),
     locale
   );
@@ -61,6 +62,7 @@ export async function recordDecisionToolActivities(
 
 export async function generateDecisionText(
   sessionMessages: SessionMessage[],
+  progress: LlmProgressDecision | undefined,
   locale: Locale = DEFAULT_LOCALE,
   reportActivity: LlmActivityReporter = ignoreActivity
 ): Promise<string> {
@@ -70,7 +72,7 @@ export async function generateDecisionText(
   const result = await generateText({
     model: client(CHAT_MODEL),
     system: SYSTEM_PROMPT,
-    prompt: buildDecisionAgentPrompt(sessionMessages, locale),
+    prompt: buildDecisionAgentPrompt(sessionMessages, progress, locale),
     tools: {
       ...mcpTools,
     },

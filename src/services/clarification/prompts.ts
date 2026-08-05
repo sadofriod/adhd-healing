@@ -15,8 +15,11 @@ const DECISION_PROMPT_TEMPLATE = `
 
 Markdown 必须同时适合作为独立 Obsidian 笔记：主报告要聚焦一个明确的决策/里程碑，给出足够上下文；双链必须克制，只保留少量确实值得沉淀为独立文档的 \`[[双链]]\`，且每个目标文档都要由你明确选择，不能为了凑数量链接泛词；只有高度相关且足够独立的垂直/细分/交叉领域才进入 researchTopics。
 
-如果还需要继续追问，输出：
+如果必须等待用户回答，输出：
 {"type":"clarify","message":"只包含一个问题的追问句"}
+
+如果只是给出阶段性陈述、不需要用户回复且应继续自动执行，输出：
+{"type":"note","message":"阶段性陈述"}
 
 如果正在进行内部分析、工具调用或子 Agent 调研，尚不能追问或收工，输出：
 {"type":"progress","phase":"process | tool-call | sub-agent","message":"当前内部推进状态"}
@@ -41,8 +44,11 @@ If any unknown can still change the core pain point, technical direction, first 
 
 Markdown must be suitable as a standalone Obsidian note: focus on one clear decision/milestone with enough context; keep wiki links \`[[...]]\` sparse and intentional; each linked target must be explicitly chosen for durable knowledge value. Add researchTopics only when a vertical/niche/cross-domain topic is both highly relevant and independent enough to deserve separate deep research.
 
-If you still need user input, output:
+If you must wait for user input, output:
 {"type":"clarify","message":"A single follow-up question only"}
+
+If you only need to share a statement and should continue automatically without user reply, output:
+{"type":"note","message":"A brief progress statement"}
 
 If you are still in internal analysis, tool execution, or sub-agent research and cannot clarify/finalize yet, output:
 {"type":"progress","phase":"process | tool-call | sub-agent","message":"Current internal progress"}

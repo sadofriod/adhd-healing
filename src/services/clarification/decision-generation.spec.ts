@@ -31,7 +31,7 @@ describe('decision generation session memory integration', () => {
 
     const prompt = buildDecisionAgentPrompt([
       { role: 'user', content: '请判断商业化优先级' },
-    ]);
+    ], undefined);
 
     expect(prompt).toContain('Session 调研记忆');
     expect(prompt).toContain('github_get_repo（MCP）');

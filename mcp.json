@@ -6,7 +6,10 @@
       "args": [
         "-y",
         "cloakbrowser-mcp@1.10.0"
-      ]
+      ],
+      "env": {
+        "NPM_CONFIG_CACHE": ".npm-cache"
+      }
     },
     "github": {
       "type": "stdio",

@@ -11,6 +11,24 @@ describe('parseDecision', () => {
     });
   });
 
+  test('normalizes non-question clarify payloads into note decisions', () => {
+    const decision = parseDecision('{"type":"clarify","message":"我先梳理榜单样本，然后继续推进。"}');
+
+    expect(decision).toEqual({
+      type: 'note',
+      message: '我先梳理榜单样本，然后继续推进。',
+    });
+  });
+
+  test('maps plain narration text to note decisions', () => {
+    const decision = parseDecision('我已经拿到第一批样本，接下来继续交叉比对。');
+
+    expect(decision).toEqual({
+      type: 'note',
+      message: '我已经拿到第一批样本，接下来继续交叉比对。',
+    });
+  });
+
   test('normalizes a final decision with defaults for missing fields', () => {
     const decision = parseDecision('{"type":"final","message":"已经收敛好了"}');
 

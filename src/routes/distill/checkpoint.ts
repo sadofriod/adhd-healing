@@ -1,4 +1,4 @@
-import type { LlmClarifyDecision, LlmProgressDecision } from '../../types';
+import type { LlmClarifyDecision, LlmNoteDecision, LlmProgressDecision } from '../../types';
 import { config } from '../../config/env';
 import { writeObsidianNote } from '../../services/obsidian-writer';
 import { buildVaultFilename } from '../../services/vault/filename';
@@ -8,7 +8,7 @@ type SessionMessage = {
   readonly content: string;
 };
 
-export type DistillCheckpointDecision = LlmClarifyDecision | LlmProgressDecision;
+export type DistillCheckpointDecision = LlmClarifyDecision | LlmNoteDecision | LlmProgressDecision;
 
 export type DistillCheckpointInput = {
   readonly decision: DistillCheckpointDecision;
@@ -28,7 +28,9 @@ function getCheckpointPath(topic: string, now: Date): string {
 }
 
 function getDecisionLabel(decision: DistillCheckpointDecision): string {
-  return decision.type === 'clarify' ? 'clarify' : `progress:${decision.phase}`;
+  if (decision.type === 'clarify') return 'clarify';
+  if (decision.type === 'note') return 'note';
+  return `progress:${decision.phase}`;
 }
 
 function buildCheckpointContent(

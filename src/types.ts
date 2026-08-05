@@ -106,6 +106,11 @@ export type LlmClarifyDecision = {
   readonly message: string;
 };
 
+export type LlmNoteDecision = {
+  readonly type: 'note';
+  readonly message: string;
+};
+
 export type LlmProgressPhase = 'process' | 'tool-call' | 'sub-agent';
 
 export type LlmProgressDecision = {
@@ -143,4 +148,4 @@ export type LlmFinalDecision = LlmFinalDecisionDraft & {
   readonly researchArtifacts: readonly DeepResearchArtifact[];
 };
 
-export type LlmDecision = LlmClarifyDecision | LlmProgressDecision | LlmFinalDecision;
+export type LlmDecision = LlmClarifyDecision | LlmNoteDecision | LlmProgressDecision | LlmFinalDecision;

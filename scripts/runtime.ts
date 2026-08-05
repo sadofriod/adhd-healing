@@ -1,7 +1,7 @@
 import { mkdir, readdir, rm, stat } from 'fs/promises';
 import { resolve } from 'path';
 import { config } from '../src/config/env';
-import { loadMcpConfig, type McpConfig } from '../src/services/mcpConfig';
+import { loadMcpConfig, resolveMcpEnvironment, type McpConfig } from '../src/services/mcpConfig';
 
 export type ManagedProcess = ReturnType<typeof Bun.spawn>;
 
@@ -31,6 +31,55 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function compactEnvironment(
+  environment: Readonly<Record<string, string | undefined>>
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(environment).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
+}
+
+function getNpxPackageSpec(args: readonly string[]): string | undefined {
+  return args.find(argument => !argument.startsWith('-'));
+}
+
+export async function prefetchNpxMcpDependencies(
+  mcpConfig: McpConfig,
+  spawn: ProcessSpawner
+): Promise<void> {
+  const stdioServers = Object.entries(mcpConfig.servers).filter(
+    (entry): entry is [string, Extract<McpConfig['servers'][string], { type: 'stdio' }>] =>
+      entry[1].type === 'stdio'
+  );
+
+  for (const [serverName, server] of stdioServers) {
+    if (server.command !== 'npx') continue;
+    const packageSpec = getNpxPackageSpec(server.args);
+    if (!packageSpec) {
+      console.warn(`[runtime] Skipped dependency prefetch for ${serverName}: missing npx package spec.`);
+      continue;
+    }
+
+    const prefetch = spawn(
+      ['npm', 'exec', '--yes', '--package', packageSpec, '--', 'node', '-e', 'process.exit(0)'],
+      {
+        environment: {
+          ...compactEnvironment(process.env),
+          ...resolveMcpEnvironment(server.env, process.env),
+        },
+      }
+    );
+    const exitCode = await prefetch.exited;
+    if (exitCode !== 0) {
+      console.warn(
+        `[runtime] Failed to prefetch MCP dependency for ${serverName} (${packageSpec}), exit code ${exitCode}.`
+      );
+      continue;
+    }
+    console.log(`[runtime] Prefetched MCP dependency for ${serverName}: ${packageSpec}`);
+  }
+}
+
 function getObsidianServer(
   mcpConfig: McpConfig
 ): Extract<McpConfig['servers'][string], { type: 'sse' }> {
@@ -53,17 +102,6 @@ function getUrlPort(url: URL): string {
   if (url.port) return url.port;
   if (url.protocol === 'https:') return '443';
   return '80';
-}
-
-async function resolveObsidianEndpoint(): Promise<RuntimeEndpoint> {
-  const mcpConfig = await loadMcpConfig(config.mcpConfigPath);
-  const server = getObsidianServer(mcpConfig);
-  const url = getLocalUrl(server.url);
-
-  return {
-    healthUrl: new URL('/health', url).href,
-    port: getUrlPort(url),
-  };
 }
 
 function getRootObsidianPath(cwd: string): string {
@@ -199,8 +237,10 @@ export async function withManagedRuntime<T>(
   spawn: ProcessSpawner = spawnManagedProcess
 ): Promise<T> {
   await assertNoRootObsidianWorkspace();
+  const mcpConfig = await loadMcpConfig(config.mcpConfigPath);
+  await prefetchNpxMcpDependencies(mcpConfig, spawn);
   await deployDatabaseMigrations(spawn);
-  const endpoint = await resolveObsidianEndpoint();
+  const endpoint = getLocalObsidianEndpoint(mcpConfig);
   await assertMcpEndpointAvailable(endpoint.healthUrl);
   await mkdir(config.obsidianVaultPath, { recursive: true });
   const mcp = spawn(['pnpm', 'exec', 'obsidian-mcp-server'], {
@@ -219,4 +259,14 @@ export async function withManagedRuntime<T>(
   } finally {
     await stopManagedProcess(mcp);
   }
+}
+
+function getLocalObsidianEndpoint(mcpConfig: McpConfig): RuntimeEndpoint {
+  const server = getObsidianServer(mcpConfig);
+  const url = getLocalUrl(server.url);
+
+  return {
+    healthUrl: new URL('/health', url).href,
+    port: getUrlPort(url),
+  };
 }

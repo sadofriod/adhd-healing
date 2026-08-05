@@ -157,13 +157,41 @@ function buildServerConnection(
 export async function initializeMcpServers(configPath: string): Promise<void> {
   const config = await loadMcpConfig(configPath);
   const configuredServers = getConfiguredServers(config.servers);
-  const connections = await Promise.all(
-    Object.entries(configuredServers).map(([serverName, server]) => connectServer(serverName, server))
+  const attempts = await Promise.allSettled(
+    Object.entries(configuredServers).map(async ([serverName, server]) => ({
+      serverName,
+      connection: await connectServer(serverName, server),
+    }))
   );
+
+  const successes = attempts
+    .filter((attempt): attempt is PromiseFulfilledResult<{
+      readonly serverName: string;
+      readonly connection: {
+        readonly client: McpClient;
+        readonly tools: ToolSet;
+        readonly directTools: ToolSet;
+      };
+    }> => attempt.status === 'fulfilled')
+    .map(attempt => attempt.value);
+
+  attempts.forEach((attempt, index) => {
+    if (attempt.status === 'fulfilled') return;
+    const serverName = Object.keys(configuredServers)[index];
+    console.warn(`[mcp] Failed to connect server ${serverName}: ${getErrorMessage(attempt.reason)}`);
+  });
+
+  if (successes.length === 0) {
+    throw new Error('Failed to initialize all MCP servers');
+  }
+
+  const connections = successes.map(success => success.connection);
   clients = connections.map(connection => connection.client);
   tools = Object.assign({}, ...connections.map(connection => connection.tools));
   directTools = Object.assign({}, ...connections.map(connection => connection.directTools));
-  console.log(`[mcp] Loaded ${Object.keys(tools).length} tools from ${connections.length} server(s).`);
+  console.log(
+    `[mcp] Loaded ${Object.keys(tools).length} tools from ${connections.length}/${Object.keys(configuredServers).length} server(s).`
+  );
 }
 
 export function getMcpTools(): ToolSet {

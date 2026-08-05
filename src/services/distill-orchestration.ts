@@ -4,6 +4,7 @@ import type {
   DistillApiResponse,
   LlmFinalDecision,
   LlmClarifyDecision,
+  LlmNoteDecision,
   LlmProgressDecision,
   LlmActivityReporter,
 } from '../types';
@@ -32,7 +33,11 @@ export type DistillOrchestrationDeps = {
   readonly persistDistillCheckpoint?: typeof persistDistillCheckpoint;
 };
 
-type ContinueDecision = LlmClarifyDecision | LlmProgressDecision;
+type ContinueDecision = LlmClarifyDecision | LlmNoteDecision | LlmProgressDecision;
+type AutoContinueDecision = LlmNoteDecision | LlmProgressDecision;
+type DistillDecision = Awaited<ReturnType<typeof makeDecision>>;
+
+const MAX_AUTO_CONTINUE_STEPS = 6;
 
 function createPersistedActivityReporter(reportProgress: LlmActivityReporter): LlmActivityReporter {
   return event => {
@@ -225,9 +230,10 @@ async function resolveDecision(
   session: Array<{ role: 'user' | 'assistant'; content: string }>,
   reportProgress: LlmActivityReporter,
   locale: Locale,
-  makeDecisionFn: typeof makeDecision = makeDecision
+  makeDecisionFn: typeof makeDecision = makeDecision,
+  progress?: LlmProgressDecision
 ): Promise<ReturnType<typeof makeDecision>> {
-  return makeDecisionFn(session, locale, reportProgress);
+  return makeDecisionFn(session, locale, reportProgress, progress);
 }
 
 async function finalizeDecision(
@@ -249,18 +255,6 @@ async function finalizeDecision(
     ...decision,
     researchArtifacts,
   }, session, reportProgress, locale, deps.runFinalizeWritePipeline);
-}
-
-async function resolveDistillOutcome(
-  decision: ReturnType<typeof makeDecision> extends Promise<infer Result> ? Result : never,
-  session: Array<{ role: 'user' | 'assistant'; content: string }>,
-  reportProgress: LlmActivityReporter,
-  locale: Locale,
-  deps: DistillOrchestrationDeps
-): Promise<DistillApiResponse> {
-  return isFinalDecision(decision)
-    ? finalizeDecision(decision, session, reportProgress, locale, deps)
-    : handleContinue(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
 }
 
 function buildTranscript(
@@ -328,18 +322,58 @@ async function handleComplete(
 
 function getContinueLogLabel(decision: ContinueDecision): string {
   if (decision.type === 'clarify') return 'AI 追问';
+  if (decision.type === 'note') return 'AI 阶段陈述';
   return `AI 阶段进展（${decision.phase}）`;
 }
 
-async function handleContinue(
+function getAutoContinueMessage(locale: Locale): string {
+  if (isEnglish(locale)) return 'Continuing automatically based on the current statement.';
+  return '基于当前阶段陈述继续自动执行';
+}
+
+function getAutoContinueLimitMessage(locale: Locale): string {
+  if (isEnglish(locale)) return 'Reached automatic continuation limit. Please clarify your top priority so I can continue.';
+  return '已达到自动续跑上限。请补充当前最高优先级，我将继续执行。';
+}
+
+function isClarifyDecision(decision: DistillDecision): decision is LlmClarifyDecision {
+  return decision.type === 'clarify';
+}
+
+function toProgressContext(decision: AutoContinueDecision): LlmProgressDecision {
+  if (decision.type === 'progress') return decision;
+  return {
+    type: 'progress',
+    phase: 'process',
+    message: decision.message,
+  };
+}
+
+function reportAutoContinueProgress(
+  reportProgress: LlmActivityReporter,
+  decision: AutoContinueDecision,
+  locale: Locale
+): void {
+  if (decision.type === 'progress') {
+    reportProgress(decision);
+    return;
+  }
+
+  reportProgress({
+    type: 'progress',
+    phase: 'process',
+    message: getAutoContinueMessage(locale),
+    details: decision.message,
+  });
+}
+
+async function persistCheckpointSafely(
   decision: ContinueDecision,
   session: Array<{ role: 'user' | 'assistant'; content: string }>,
   reportProgress: LlmActivityReporter,
   locale: Locale,
   persistCheckpoint: typeof persistDistillCheckpoint = persistDistillCheckpoint
-): Promise<DistillApiResponse> {
-  console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
-
+): Promise<void> {
   try {
     await persistCheckpoint({ decision, session });
   } catch (error) {
@@ -350,6 +384,17 @@ async function handleContinue(
       getErrorMessage(error)
     );
   }
+}
+
+async function handleContinue(
+  decision: LlmClarifyDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  persistCheckpoint: typeof persistDistillCheckpoint = persistDistillCheckpoint
+): Promise<DistillApiResponse> {
+  console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
+  await persistCheckpointSafely(decision, session, reportProgress, locale, persistCheckpoint);
 
   await appendToSession('assistant', decision.message);
   await flushSessionPersistence();
@@ -358,6 +403,43 @@ async function handleContinue(
     sessionId: requireCurrentSessionId(),
     text: decision.message,
   };
+}
+
+async function resolveDistillDecisionLoop(
+  initialDecision: DistillDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  deps: DistillOrchestrationDeps
+): Promise<DistillApiResponse> {
+  const decide = deps.makeDecision ?? makeDecision;
+  let decision = initialDecision;
+
+  for (let step = 0; step < MAX_AUTO_CONTINUE_STEPS; step += 1) {
+    if (isFinalDecision(decision)) {
+      return finalizeDecision(decision, session, reportProgress, locale, deps);
+    }
+
+    if (isClarifyDecision(decision)) {
+      return handleContinue(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
+    }
+
+    console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
+    reportAutoContinueProgress(reportProgress, decision, locale);
+    await persistCheckpointSafely(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
+    decision = await resolveDecision(
+      session,
+      reportProgress,
+      locale,
+      decide,
+      toProgressContext(decision)
+    );
+  }
+
+  return handleContinue({
+    type: 'clarify',
+    message: getAutoContinueLimitMessage(locale),
+  }, session, reportProgress, locale, deps.persistDistillCheckpoint);
 }
 
 export async function runDistillOrchestration(
@@ -378,5 +460,5 @@ export async function runDistillOrchestration(
     locale,
     deps.makeDecision ?? makeDecision
   );
-  return resolveDistillOutcome(decision, session, persistedReportProgress, locale, deps);
+  return resolveDistillDecisionLoop(decision, session, persistedReportProgress, locale, deps);
 }

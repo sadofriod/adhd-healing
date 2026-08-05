@@ -3,6 +3,7 @@ import type {
   DistillRequest,
   LlmClarifyDecision,
   LlmFinalDecision,
+  LlmNoteDecision,
   LlmProgressDecision,
 } from '../../types';
 import { processDistill } from './process';
@@ -106,27 +107,46 @@ describe('processDistill', () => {
     expect(finalizeResearchArtifacts).toEqual([]);
   });
 
-  test('persists a stage checkpoint for non-final decisions', async () => {
-    const checkpoints: Array<{ decision: LlmClarifyDecision | LlmProgressDecision; size: number }> = [];
+  test('auto-continues progress decisions until a user-reply clarify decision appears', async () => {
+    const checkpoints: Array<{ decision: LlmClarifyDecision | LlmNoteDecision | LlmProgressDecision; size: number }> = [];
+    let attempts = 0;
 
     const response = await processDistill(REQUEST, () => undefined, {
-      makeDecision: async () => ({
-        type: 'progress',
-        phase: 'tool-call',
-        message: '正在分析仓库并调用工具',
-      }),
+      makeDecision: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return {
+            type: 'progress',
+            phase: 'tool-call',
+            message: '正在分析仓库并调用工具',
+          };
+        }
+        return {
+          type: 'clarify',
+          message: '请确认你最看重哪一个目标？',
+        };
+      },
       persistDistillCheckpoint: async input => {
         checkpoints.push({ decision: input.decision, size: input.session.length });
       },
     });
 
     expect(response.status).toBe('CONTINUE');
-    expect(checkpoints).toHaveLength(1);
+    expect(response.text).toBe('请确认你最看重哪一个目标？');
+    expect(attempts).toBe(2);
+    expect(checkpoints).toHaveLength(2);
     expect(checkpoints[0]).toEqual({
       decision: {
         type: 'progress',
         phase: 'tool-call',
         message: '正在分析仓库并调用工具',
+      },
+      size: 1,
+    });
+    expect(checkpoints[1]).toEqual({
+      decision: {
+        type: 'clarify',
+        message: '请确认你最看重哪一个目标？',
       },
       size: 1,
     });
@@ -148,6 +168,25 @@ describe('processDistill', () => {
 
     expect(response.status).toBe('FINISH');
     expect(checkpointCalled).toBeFalse();
+  });
+
+  test('auto-continues note decisions and can still finalize in the same request', async () => {
+    let attempts = 0;
+
+    const response = await processDistill(REQUEST, () => undefined, {
+      makeDecision: async () => {
+        attempts += 1;
+        if (attempts === 1) return { type: 'note', message: '已完成榜单采样，继续整合对比。' };
+        return buildFinalDecision(false);
+      },
+      runFinalizeWritePipeline: async () => ({
+        directoryPath: '/tmp/idea',
+        mainLink: 'obsidian://idea',
+      }),
+    });
+
+    expect(response.status).toBe('FINISH');
+    expect(attempts).toBe(2);
   });
 
   test('returns english final text and propagates english locale to deep research', async () => {

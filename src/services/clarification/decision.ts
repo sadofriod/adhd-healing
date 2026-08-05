@@ -3,6 +3,7 @@ import type {
   DeepResearchTopic,
   LlmClarifyDecision,
   LlmFinalDecisionDraft,
+  LlmNoteDecision,
   LlmProgressDecision,
   LlmProgressPhase,
 } from '../../types';
@@ -10,7 +11,7 @@ import type {
 const EMPTY_PROGRESS_MESSAGE = '模型尚未形成可交付决策';
 
 const DecisionSchema = z.object({
-  type: z.enum(['clarify', 'progress', 'final']),
+  type: z.enum(['clarify', 'note', 'progress', 'final']),
   message: z.string().trim().min(1),
   phase: z.enum(['process', 'tool-call', 'sub-agent']).optional(),
   markdown: z.string().trim().optional(),
@@ -27,6 +28,7 @@ const DecisionSchema = z.object({
 type ParsedDecision = z.infer<typeof DecisionSchema>;
 export type DecisionParseResult =
   | LlmClarifyDecision
+  | LlmNoteDecision
   | LlmProgressDecision
   | LlmFinalDecisionDraft;
 
@@ -129,10 +131,25 @@ function normalizeClarifyDecision(message: string): DecisionParseResult {
     message: EMPTY_PROGRESS_MESSAGE,
   };
   if (isClarificationRequest(trimmed)) return { type: 'clarify', message: trimmed };
+  return { type: 'note', message: trimmed };
+}
+
+function normalizeNoteDecision(message: string): LlmNoteDecision {
+  const trimmed = message.trim();
+  if (!trimmed) return { type: 'note', message: EMPTY_PROGRESS_MESSAGE };
+  return { type: 'note', message: trimmed };
+}
+
+function normalizeNarrationDecision(
+  message: string,
+  phaseHint?: LlmProgressPhase
+): LlmNoteDecision | LlmProgressDecision {
+  const note = normalizeNoteDecision(message);
+  if (!phaseHint) return note;
   return {
     type: 'progress',
-    phase: inferProgressPhase(trimmed),
-    message: trimmed,
+    phase: phaseHint,
+    message: note.message,
   };
 }
 
@@ -219,12 +236,7 @@ function normalizeToolThenFinalNarration(rawText: string): DecisionParseResult |
   if (!message) return null;
   if (!rawText.includes('"type":"final"')) return null;
   if (isClarificationRequest(message)) return null;
-
-  return {
-    type: 'progress',
-    phase: inferProgressPhase(message),
-    message,
-  };
+  return normalizeNarrationDecision(message, inferProgressPhase(message));
 }
 
 function tryNormalizeMixedNarration(rawText: string): DecisionParseResult | null {
@@ -238,6 +250,7 @@ function normalizeParsedDecision(
   phaseHint?: LlmProgressPhase
 ): DecisionParseResult {
   if (parsed.type === 'clarify') return normalizeClarifyDecision(parsed.message);
+  if (parsed.type === 'note') return normalizeNoteDecision(parsed.message);
   if (parsed.type === 'progress') return normalizeProgressDecision(parsed, phaseHint);
   return normalizeFinalDecision(parsed);
 }
@@ -249,7 +262,7 @@ function normalizeUnstructuredDecision(
   const mixedNarration = tryNormalizeMixedNarration(rawText);
   if (mixedNarration) return mixedNarration;
 
-  if (rawText.trim()) return normalizeClarifyDecision(rawText);
+  if (rawText.trim()) return normalizeNarrationDecision(rawText, phaseHint);
   if (!phaseHint) return normalizeClarifyDecision(rawText);
   return {
     type: 'progress',

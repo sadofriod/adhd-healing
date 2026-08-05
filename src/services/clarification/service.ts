@@ -3,6 +3,7 @@ import type {
   LlmFinalDecision,
   LlmFinalDecisionDraft,
   LlmActivityReporter,
+  LlmProgressDecision,
 } from '../../types';
 import { DEFAULT_LOCALE, type Locale } from '../../i18n/locale';
 import { classifyArchiveDocument } from './archive';
@@ -34,10 +35,11 @@ async function attachArchiveClassification(
 export async function makeDecision(
   sessionMessages: SessionMessage[],
   locale: Locale = DEFAULT_LOCALE,
-  reportActivity: LlmActivityReporter = ignoreActivity
+  reportActivity: LlmActivityReporter = ignoreActivity,
+  progress?: LlmProgressDecision
 ): Promise<LlmDecision> {
-  const rawText = await generateDecisionText(sessionMessages, locale, reportActivity);
-  const decision = parseDecision(rawText);
+  const rawText = await generateDecisionText(sessionMessages, progress, locale, reportActivity);
+  const decision = parseDecision(rawText, progress?.phase);
 
   if (decision.type !== 'final') return decision;
   return attachArchiveClassification(decision, sessionMessages, locale);
