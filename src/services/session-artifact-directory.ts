@@ -1,6 +1,6 @@
 import { database } from './database';
 import { flushSessionPersistence } from './session';
-import { buildArtifactDirectoryName, buildSafeTitle } from './vault/filename';
+import { buildArtifactDirectoryName } from './vault/filename';
 
 const ARTIFACT_DIRECTORY_KEY = 'obsidian:artifact-directory:v1';
 const ARTIFACT_DIRECTORY_TOOL = 'obsidian-artifact-directory';
@@ -18,10 +18,11 @@ function isLegacyDirectoryPath(directoryPath: string): boolean {
 }
 
 function normalizeLegacyDirectoryPath(directoryPath: string, title: string): string {
-  const match = directoryPath.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{6})\d{3}-(.+)$/u);
+  const match = directoryPath.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{6})(\d{3})-(.+)$/u);
   if (!match) return directoryPath;
-  const [, year, month, day, hhmmss] = match;
-  return `${buildSafeTitle(title)}-${year}${month}${day}-${hhmmss}`;
+  const [, year, month, day, hhmmss, milliseconds] = match;
+  const iso = `${year}-${month}-${day}T${hhmmss.slice(0, 2)}:${hhmmss.slice(2, 4)}:${hhmmss.slice(4, 6)}.${milliseconds}Z`;
+  return buildArtifactDirectoryName(title, new Date(iso));
 }
 
 function parseStoredDirectoryPath(outputJson: string): string | undefined {

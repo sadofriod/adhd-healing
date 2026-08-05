@@ -1,4 +1,4 @@
-import { mkdir, stat } from 'fs/promises';
+import { mkdir, readdir, rm, stat } from 'fs/promises';
 import { resolve } from 'path';
 import { config } from '../src/config/env';
 import { loadMcpConfig, type McpConfig } from '../src/services/mcpConfig';
@@ -20,6 +20,12 @@ type RuntimeEndpoint = {
 const MCP_START_TIMEOUT_MS = 30_000;
 const MCP_HEALTH_RETRY_MS = 250;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const ROOT_OBSIDIAN_SAFE_FILES = new Set([
+  'app.json',
+  'appearance.json',
+  'core-plugins.json',
+  'workspace.json',
+]);
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -73,11 +79,29 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+async function listDirectoryEntries(path: string): Promise<string[]> {
+  const entries = await readdir(path, { withFileTypes: true });
+  return entries.map(entry => String(entry.name));
+}
+
+function hasOnlySafeRootObsidianFiles(entries: readonly string[]): boolean {
+  if (entries.length === 0) return true;
+  return entries.every(entry => ROOT_OBSIDIAN_SAFE_FILES.has(entry));
+}
+
 export async function assertNoRootObsidianWorkspace(cwd: string = process.cwd()): Promise<void> {
   const rootObsidianPath = getRootObsidianPath(cwd);
   if (!await isDirectory(rootObsidianPath)) return;
+
+  const entries = await listDirectoryEntries(rootObsidianPath);
+  if (hasOnlySafeRootObsidianFiles(entries)) {
+    await rm(rootObsidianPath, { recursive: true, force: true });
+    console.warn(`[runtime] Removed unexpected root .obsidian directory: ${rootObsidianPath}`);
+    return;
+  }
+
   throw new Error(
-    `[runtime] Unexpected root .obsidian directory detected at ${rootObsidianPath}. Remove it and keep Obsidian workspaces under the configured vault path only: ${config.obsidianVaultPath}`
+    `[runtime] Unexpected root .obsidian directory detected at ${rootObsidianPath}. It contains non-standard files (${entries.join(', ')}). Move or remove it manually, then keep Obsidian workspaces under the configured vault path only: ${config.obsidianVaultPath}`
   );
 }
 

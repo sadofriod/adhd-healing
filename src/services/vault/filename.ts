@@ -7,6 +7,7 @@ import {
 } from './common';
 
 const LOCAL_ARCHIVE_DIRNAME = '.local-vault';
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
 export function buildSafeTitle(title: string): string {
   const safeTitle = title
@@ -18,17 +19,16 @@ export function buildSafeTitle(title: string): string {
   return FALLBACK_SAFE_TITLE;
 }
 
-export function buildTimestamp(now: Date): string {
-  const [, timePart = '000000.000Z'] = now.toISOString().split('T');
-  return timePart.replace(/[:.]/g, '').replace('Z', '').slice(0, 9);
-}
+export function buildAlphaSuffix(now: Date, length: number): string {
+  let value = Math.max(now.getTime(), 0);
+  let suffix = '';
 
-function buildCompactArtifactDirectorySuffix(now: Date): string {
-  const iso = now.toISOString();
-  const [datePart = '1970-01-01', timePart = '00:00:00.000Z'] = iso.split('T');
-  const compactDate = datePart.replace(/-/g, '');
-  const compactTime = timePart.replace(/[:.]/g, '').replace('Z', '').slice(0, 6);
-  return `${compactDate}-${compactTime}`;
+  for (let index = 0; index < length; index += 1) {
+    suffix = `${ALPHABET[value % ALPHABET.length]}${suffix}`;
+    value = Math.floor(value / ALPHABET.length);
+  }
+
+  return suffix;
 }
 
 export function sanitizeArchiveSegment(value: string, fallback: string): string {
@@ -42,14 +42,12 @@ export function toPortablePath(path: string): string {
 }
 
 export function buildVaultFilename(title: string, now: Date = new Date()): string {
-  const date = now.toISOString().split('T')[0];
-  const timestamp = buildTimestamp(now);
   const safeTitle = buildSafeTitle(title);
-  return `${date}-${timestamp}-${safeTitle}.md`;
+  return `${safeTitle}-${buildAlphaSuffix(now, 8)}.md`;
 }
 
 export function buildArtifactDirectoryName(title: string, now: Date = new Date()): string {
-  return `${buildSafeTitle(title)}-${buildCompactArtifactDirectorySuffix(now)}`;
+  return `${buildSafeTitle(title)}-${buildAlphaSuffix(now, 6)}`;
 }
 
 export function getLocalArchiveRoot(): string {

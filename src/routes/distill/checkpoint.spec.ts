@@ -31,7 +31,7 @@ describe('persistDistillCheckpoint', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.path).toBe(
-      '.local-vault/_session-checkpoints/2026-08-05-033715922-回溯者第一卷角色精简与文风去AI化-checkpoint.md'
+      '.local-vault/_session-checkpoints/回溯者第一卷角色精简与文风去AI化-checkpoint-ojeyzdtq.md'
     );
     expect(calls[0]!.options?.vaultPath).toBeDefined();
     expect(calls[0]!.content).toContain('当前结论: 正在分析仓库并调用工具');

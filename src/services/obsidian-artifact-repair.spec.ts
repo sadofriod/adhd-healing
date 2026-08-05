@@ -66,16 +66,16 @@ describe('repairLegacyArtifactDirectory', () => {
       },
     ]);
 
-    expect(result.directoryName).toBe('回溯者第一卷角色精简与文风去AI化-20260805-033715');
+    expect(result.directoryName).toBe('回溯者第一卷角色精简与文风去AI化-eyzdtq');
     expect(result.files[0]!.content).toContain(
-      '[[回溯者第一卷角色精简与文风去AI化-20260805-033715/AI-文风去味清单|AI 文风去味清单]]'
+      '[[回溯者第一卷角色精简与文风去AI化-eyzdtq/AI-文风去味清单|AI 文风去味清单]]'
     );
     expect(result.files[2]!.content).toContain('## 已记录上下文');
     expect(result.files[2]!.content).toContain('用于清洗正文的 AI 指纹句式与修辞。');
     expect(result.files[2]!.content).toContain('本调研产出的 6 类指纹检查清单，可直接用于逐章清洗。');
     expect(result.files[2]!.content).not.toContain('## 待补充');
     expect(result.files[2]!.content).toContain(
-      'parent: "[[回溯者第一卷角色精简与文风去AI化-20260805-033715/2026-08-05-033715922-回溯者第一卷角色精简与文风去AI化]]"'
+      'parent: "[[回溯者第一卷角色精简与文风去AI化-eyzdtq/2026-08-05-033715922-回溯者第一卷角色精简与文风去AI化]]"'
     );
   });
 });

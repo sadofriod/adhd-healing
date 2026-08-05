@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, rm } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { assertNoRootObsidianWorkspace } from './runtime';
@@ -20,10 +20,28 @@ describe('runtime guard for root .obsidian', () => {
     await expect(assertNoRootObsidianWorkspace(cwd)).resolves.toBeUndefined();
   });
 
-  test('fails startup when repository root contains .obsidian directory', async () => {
+  test('auto-cleans root .obsidian when it only contains tool-generated metadata files', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'runtime-guard-'));
     tempDirs.push(cwd);
-    await mkdir(join(cwd, '.obsidian'), { recursive: true });
+    const obsidianRoot = join(cwd, '.obsidian');
+    await mkdir(obsidianRoot, { recursive: true });
+    await Promise.all([
+      writeFile(join(obsidianRoot, 'app.json'), '{}', 'utf8'),
+      writeFile(join(obsidianRoot, 'appearance.json'), '{}', 'utf8'),
+      writeFile(join(obsidianRoot, 'core-plugins.json'), '[]', 'utf8'),
+      writeFile(join(obsidianRoot, 'workspace.json'), '{}', 'utf8'),
+    ]);
+
+    await expect(assertNoRootObsidianWorkspace(cwd)).resolves.toBeUndefined();
+    await expect(assertNoRootObsidianWorkspace(cwd)).resolves.toBeUndefined();
+  });
+
+  test('fails startup when root .obsidian contains non-standard files', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'runtime-guard-'));
+    tempDirs.push(cwd);
+    const obsidianRoot = join(cwd, '.obsidian');
+    await mkdir(obsidianRoot, { recursive: true });
+    await writeFile(join(obsidianRoot, 'my-notes.md'), '# keep me', 'utf8');
 
     await expect(assertNoRootObsidianWorkspace(cwd)).rejects.toThrow(
       'Unexpected root .obsidian directory detected'

@@ -22,7 +22,7 @@ describe('session artifact directory', () => {
       new Date('2026-08-05T04:37:15.922Z')
     );
 
-    expect(first).toBe('回溯者-第一卷角色精简与文风去AI化-20260805-033715');
+    expect(first).toBe('回溯者-第一卷角色精简与文风去AI化-eyzdtq');
     expect(second).toBe(first);
     expect(second).not.toContain(session.id);
   });
@@ -47,6 +47,6 @@ describe('session artifact directory', () => {
       new Date('2026-08-05T03:37:15.922Z')
     );
 
-    expect(directoryPath).toBe('回溯者-第一卷角色精简与文风去AI化-20260805-033715');
+    expect(directoryPath).toBe('回溯者-第一卷角色精简与文风去AI化-eyzdtq');
   });
 });

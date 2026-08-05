@@ -6,18 +6,18 @@ import {
 } from './vault';
 
 describe('buildVaultFilename', () => {
-  it('adds a compact timestamp to avoid same-day overwrites', () => {
+  it('adds an alphabetic suffix to avoid same-title overwrites without date-number prefixes', () => {
     const first = buildVaultFilename('重复标题', new Date('2026-07-29T10:11:12.123Z'));
     const second = buildVaultFilename('重复标题', new Date('2026-07-29T10:11:12.124Z'));
 
-    expect(first).toBe('2026-07-29-101112123-重复标题.md');
-    expect(second).toBe('2026-07-29-101112124-重复标题.md');
+    expect(first).toBe('重复标题-ohibfjzv.md');
+    expect(second).toBe('重复标题-ohibfjzw.md');
   });
 
   it('falls back to a safe placeholder when the title sanitizes to empty', () => {
     const filename = buildVaultFilename('***', new Date('2026-07-29T10:11:12.123Z'));
 
-    expect(filename).toBe('2026-07-29-101112123-untitled-idea.md');
+    expect(filename).toBe('untitled-idea-ohibfjzv.md');
   });
 });
 

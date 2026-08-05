@@ -23,7 +23,7 @@ describe('Obsidian MCP persistence', () => {
   it('builds a collision-safe note with YAML and wiki-links', () => {
     const note = buildObsidianNote(input);
 
-    expect(note.path).toBe('2026-08-01-080910123-本地向量网关设计.md');
+    expect(note.path).toBe('本地向量网关设计-oidgkepf.md');
     expect(note.content).toContain('type: brain-distill');
     expect(note.content).toContain('milestone: "启动 MCP 网关"');
     expect(note.content).toContain('  - "Obsidian"');
