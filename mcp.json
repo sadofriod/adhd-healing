@@ -1,5 +1,13 @@
 {
   "servers": {
+    "cloakbrowser": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "cloakbrowser-mcp@1.10.0"
+      ]
+    },
     "github": {
       "type": "stdio",
       "command": "docker",

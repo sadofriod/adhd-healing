@@ -11,11 +11,12 @@
 - 通过 `POST /distill` 接口接收 `{ text, reset, resume, sessionId, attachments }` 格式的文字输入，并以 NDJSON 流返回进度事件和最终结果。
 - 通过 Prisma + SQLite 持久化会话历史，并允许客户端基于 `sessionId` 继续或切换会话。
 - 使用 DeepSeek `deepseek-chat` 模型，通过 Vercel AI SDK 做结构化决策。
-- 当需要最新文档 / 产品动态 / 外部事实时，可调用 Google / DuckDuckGo / Bing 浏览器搜索工具。
-- 澄清收束时自动识别与主报告高度相关的垂直、细分或交叉领域，并行启动可使用浏览器搜索和只读 MCP 工具的独立调研 Agent。
+- 当需要最新文档 / 产品动态 / 外部事实或真实页面交互时，可通过 CloakBrowser MCP 调用浏览器自动化工具。
+- 澄清收束时自动识别与主报告高度相关的垂直、细分或交叉领域，并行启动可使用浏览器自动化和只读 MCP 工具的独立调研 Agent。
 - 会话结束时，通过独立 Obsidian 持久化层写入带 YAML 属性、分类关系和语义化 `[[双链]]` 网络的完整 Markdown，适配 Graph View。
 - 默认会使用 Obsidian CLI 作为主写入路径；CLI 缺失时会直接失败并提示安装。
 - Obsidian 桌面应用无需常驻；Vault 文件系统可直接被写入。
+- 通过 CloakBrowser MCP 提供浏览器自动化能力。
 - 通过官方 `@modelcontextprotocol/server-filesystem` 增加只读文件读取 MCP。
 - Apple Reminders 仅保存时间戳、行动标题和 Obsidian 双链线索。
 - 在 `/` 提供 React 网页工作台，内含对话时间线、执行进度和历史会话面板。
@@ -171,6 +172,7 @@ CLI 内置命令：
 服务启动时会同时加载当前默认的 MCP 集成：
 
 - GitHub MCP 通过 Docker 运行，并向澄清 Agent 暴露只读的 `repos`、`issues`、`pull_requests` 工具。
+- CloakBrowser MCP 通过 `npx` 运行，并向模型暴露浏览器自动化工具。
 - Filesystem MCP 使用官方 `@modelcontextprotocol/server-filesystem` 包，只暴露本地只读文件工具。
 - Obsidian MCP 通过 SSE 连接，最终归档由网关直接调用。
 

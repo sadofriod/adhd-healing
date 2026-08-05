@@ -11,12 +11,12 @@ The system now supports persistent session history in SQLite, so you can pause, 
 - Accepts `POST /distill` with `{ text, reset, resume, sessionId, attachments }` and streams NDJSON progress plus final result events.
 - Persists session history in SQLite through Prisma and lets clients resume or switch work by `sessionId`.
 - Uses DeepSeek (`deepseek-chat`) via the Vercel AI SDK for structured decision-making.
-- Lets the model call a browser search tool backed by Google, DuckDuckGo, and Bing when fresh public context is needed.
-- Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser search and read-only MCP tools.
+- Lets the model call browser automation tools through CloakBrowser MCP when fresh public context or live page interaction is needed.
+- Automatically identifies highly relevant vertical, niche, or cross-domain topics when clarification completes, then runs independent research agents in parallel with browser automation and read-only MCP tools.
 - Writes YAML and semantic wiki-link networks through an Obsidian persistence layer for Graph View.
 - Uses Obsidian CLI as the primary write path and fails fast with install guidance if the CLI is missing.
 - Keeps Obsidian as the complete knowledge source without requiring the desktop app to stay open.
-- Adds a read-only filesystem MCP for local file access using the official `@modelcontextprotocol/server-filesystem` package.
+- Adds CloakBrowser MCP for browser automation and a read-only filesystem MCP for local file access using the official `@modelcontextprotocol/server-filesystem` package.
 - Syncs only a timestamped milestone title and Obsidian wiki-link reference to Apple Reminders.
 - Serves a React web workspace at `/` with conversation timeline, progress, and session history panels.
 - Supports a terminal CLI with built-in session controls: new session, continue paused turn, list history, and switch history session.
@@ -186,6 +186,7 @@ finalization request.
 The default [MCP configuration](./mcp.json) keeps both integrations:
 
 - GitHub MCP runs through Docker with read-only `repos`, `issues`, and `pull_requests` tools exposed to the clarification agent.
+- CloakBrowser MCP runs through `npx` and exposes browser automation tools to the model.
 - Filesystem MCP runs through the official `@modelcontextprotocol/server-filesystem` package and exposes only read-only local file tools.
 - Obsidian MCP connects over SSE and is called directly by the final persistence pipeline.
 

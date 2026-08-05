@@ -5,7 +5,6 @@ import { getSessionResearchMemory } from '../session';
 import { rememberCompressedSessionResearch } from '../session-memory';
 import { reportTokenUsages } from '../token-usage';
 import { SYSTEM_PROMPT } from './agent';
-import { createBrowserSearchTool } from './browser-search-tool';
 import { buildDecisionPrompt } from './prompts';
 import { collectToolActivities, type ToolActivity } from './tool-usage';
 import type { LlmActivityReporter } from '../../types';
@@ -73,7 +72,6 @@ export async function generateDecisionText(
     system: SYSTEM_PROMPT,
     prompt: buildDecisionAgentPrompt(sessionMessages, locale),
     tools: {
-      browser_search: createBrowserSearchTool(),
       ...mcpTools,
     },
     toolChoice: 'auto',

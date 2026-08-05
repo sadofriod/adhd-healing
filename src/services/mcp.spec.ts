@@ -18,6 +18,24 @@ function getStdioServer(config: McpConfig, name: string): Extract<
 }
 
 describe('MCP configuration', () => {
+  test('parses a cloakbrowser browser server', () => {
+    const config = parseMcpConfig({
+      servers: {
+        cloakbrowser: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', 'cloakbrowser-mcp@1.10.0'],
+        },
+      },
+    });
+
+    const cloakbrowser = config.servers.cloakbrowser;
+    expect(cloakbrowser?.type).toBe('stdio');
+    if (cloakbrowser?.type !== 'stdio') throw new Error('Expected stdio server');
+    expect(cloakbrowser.command).toBe('npx');
+    expect(cloakbrowser.args).toEqual(['-y', 'cloakbrowser-mcp@1.10.0']);
+  });
+
   test('parses a stdio server', () => {
     const config = parseMcpConfig({
       servers: {
