@@ -10,7 +10,6 @@ import { getMcpTools } from '../mcp';
 import { reportTokenUsages } from '../token-usage';
 import { getSessionResearchMemory } from '../session';
 import { rememberCompressedSessionResearch } from '../session-memory';
-import { createBrowserSearchTool } from './browser-search-tool';
 import { buildMemoryInstruction } from './prompts';
 import { getResearchSystemPrompt } from './research-agent';
 import { collectToolActivities } from './tool-usage';
@@ -164,7 +163,6 @@ async function generateResearchText(
     system: getResearchSystemPrompt(),
     prompt: buildResearchPrompt(input),
     tools: {
-      browser_search: createBrowserSearchTool(),
       ...mcpTools,
     },
     toolChoice: 'auto',
