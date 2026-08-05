@@ -56,7 +56,7 @@ Expected startup output:
 ```
 [start] Obsidian MCP is healthy at http://localhost:3001/health
 [startup] DeepSeek API key configured: sk-abc...
-[startup] Obsidian vault path: /path/to/vault/Brainstorm
+[startup] Obsidian note container: /path/to/vault/Brainstorm
 [mcp] Loaded ... tools from 2 server(s).
 [startup] Dependencies verified.
 [server] 🚀 Gateway listening on http://localhost:5001
@@ -70,10 +70,11 @@ reference; the full report remains in Obsidian.
 
 ## 4. Obsidian archive behavior
 
-Every completed conversation is written through the configured MCP tool directly
-into the Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. Each note contains
-YAML properties, the full report, `[[wiki-links]]`, the original input, and the
-conversation transcript.
+Every completed conversation first creates a report directory beneath
+`BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`, then writes the vault contents into that
+report directory. That report directory is the actual Vault root, so `.obsidian`
+lives inside the report folder. Each note contains YAML properties, the full
+report, `[[wiki-links]]`, the original input, and the conversation transcript.
 
 ## 5. Access Modes
 

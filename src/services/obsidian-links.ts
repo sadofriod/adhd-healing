@@ -71,7 +71,7 @@ function rememberKnownTarget(
 
 function createLinkedDocument(
   rawTarget: string,
-  directoryPath: string,
+  _directoryPath: string,
   usedStems: Map<string, number>,
   source: LinkableDocument,
   excerpt: string
@@ -79,8 +79,8 @@ function createLinkedDocument(
   const stem = getUniqueStem(rawTarget, usedStems);
   return {
     title: rawTarget,
-    path: `${directoryPath}/${stem}.md`,
-    linkTarget: `${directoryPath}/${stem}`,
+    path: `${stem}.md`,
+    linkTarget: stem,
     mentions: [{
       sourceTitle: source.title,
       sourceLinkTarget: source.linkTarget,

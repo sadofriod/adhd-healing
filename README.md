@@ -2,9 +2,9 @@
 
 [中文说明](./README.zh-CN.md)
 
-Obsidian-first idea clarification and distillation gateway for a single-user, Mac-hosted workflow. The built-in terminal CLI and React web workspace share the same streaming API, and any HTTP-capable automation client can integrate with that contract. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report through an Obsidian MCP server and sends only a concise action reference to Apple Reminders.
+Obsidian-first idea clarification and distillation gateway for a single-user, Mac-hosted workflow. The built-in terminal CLI and React web workspace share the same streaming API, and any HTTP-capable automation client can integrate with that contract. The service uses DeepSeek for structured multi-turn clarification, then persists the complete report into a per-report Obsidian vault subdirectory beneath the configured note container and sends only a concise action reference to Apple Reminders.
 
-The system now supports persistent session history in SQLite, so you can pause, resume, switch sessions, and keep working without relying on a browser-only flow.
+The system now supports persistent session history in SQLite, so you can pause, resume, switch sessions, and keep working without relying on a browser-only flow. Apple Reminders sync is now optional and defaults to off so the first-run experience stays focused on the core Obsidian-backed workflow.
 
 ## What It Does
 
@@ -63,9 +63,10 @@ This repository is intentionally local-first and macOS-hosted.
 
 - Bun 1.0+
 - pnpm 10+
-- macOS with Reminders permissions granted to Terminal/Bun
+- macOS is optional for the core flow; the main CLI path only requires a local Obsidian vault and a DeepSeek API key
 - Obsidian desktop app with Command line interface enabled and registered in PATH
 - DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com))
+- Optional: Apple Reminders sync can be enabled with `REMINDERS_SYNC_ENABLED=true` when you want a reminder created after each finished session
 
 ### 2. Configure environment
 
@@ -85,6 +86,7 @@ Optional:
 
 ```env
 PORT=5001
+REMINDERS_SYNC_ENABLED=false
 MCP_CONFIG_PATH=/absolute/path/to/mcp.json
 MCP_FILESYSTEM_ALLOWED_DIRS=["/absolute/path/to/extra/dir"]
 OBSIDIAN_MCP_WRITE_TOOL=obsidian_create-note
@@ -170,11 +172,13 @@ delegate workflow state to the gateway.
 
 ### 8. Obsidian archive
 
-Each finished conversation creates a timestamped artifact directory under the
-Vault rooted at `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER`. The directory contains
-the main report and any highly relevant execution-focused research reports.
-Parent/child frontmatter and bidirectional wiki-links connect every report. The
-main report also retains the raw input and transcript.
+Each finished conversation creates a timestamped artifact directory beneath the
+configured `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` container. That directory
+becomes the actual Obsidian vault root for the report, so `.obsidian` lives
+inside the report folder rather than at the container root. The directory
+contains the main report and any highly relevant execution-focused research
+reports. Parent/child frontmatter and bidirectional wiki-links connect every
+report. The main report also retains the raw input and transcript.
 
 Research topics are selected by the clarification agent only when they directly
 affect execution. There is no fixed topic limit. All research agents must finish
@@ -194,7 +198,7 @@ The default [MCP configuration](./mcp.json) keeps both integrations:
 
 The current runtime target is host-native macOS plus SQLite, not a full Dockerized app
 stack. That is intentional: the service depends on local Vault paths, the Obsidian CLI,
-and Apple Reminders automation, all of which are simpler and more reliable on the host
+and optional Apple Reminders automation, all of which are simpler and more reliable on the host
 than inside a container. SQLite is sufficient for the current single-user, local-first
 workflow, while Docker remains optional only for the read-only GitHub MCP server defined
 in `mcp.json`. Revisit Docker Compose when remote deployment, contributor onboarding

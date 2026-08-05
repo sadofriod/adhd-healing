@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { access, mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   buildObsidianArtifactBundle,
   saveObsidianArtifactBundle,
@@ -47,17 +50,18 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.mainNote.content).toContain(
-      '[[Agent-商业化-doblii/MCP-实施指南|MCP 实施指南]]'
+      '[[MCP-实施指南|MCP 实施指南]]'
     );
     expect(bundle.mainNote.content).toContain(
-      '[[Agent-商业化-doblii/Obsidian-自动归档|Obsidian 自动归档]]'
+      '[[Obsidian-自动归档|Obsidian 自动归档]]'
     );
     expect(bundle.linkedNotes.map(note => note.path)).toEqual([
-      'Agent-商业化-doblii/MCP-实施指南.md',
-      'Agent-商业化-doblii/Obsidian-自动归档.md',
+      'MCP-实施指南.md',
+      'Obsidian-自动归档.md',
     ]);
     expect(bundle.linkedNotes[0]!.content).toContain('type: brain-distill-link');
-    expect(bundle.linkedNotes[0]!.content).toContain('使用 MCP 实施指南 连接 Obsidian 自动归档。');
+    expect(bundle.linkedNotes[0]!.content).toContain('## 核心结论');
+    expect(bundle.linkedNotes[0]!.content).toContain('## 证据');
     expect(bundle.linkedNotes[0]!.content).toContain('MCP 实施指南 — 约束工具接入。');
     expect(bundle.linkedNotes[0]!.content).not.toContain('## 待补充');
   });
@@ -79,13 +83,13 @@ describe('Obsidian artifact bundles', () => {
     expect(firstBundle.directoryPath).toBe('Agent-商业化-doblii');
     expect(secondBundle.directoryPath).toBe(firstBundle.directoryPath);
     expect(firstBundle.mainNote.path).toBe(
-      'Agent-商业化-doblii/Agent-商业化-oidoblii.md'
+      'Agent-商业化-oidoblii.md'
     );
     expect(secondBundle.mainNote.path).toBe(
-      'Agent-商业化-doblii/第二次收束-oidvygtw.md'
+      '第二次收束-oidvygtw.md'
     );
     expect(firstBundle.researchNotes[0]!.path).toBe(
-      'Agent-商业化-doblii/Agent-商业化-oidoblii--许可证执行指南.md'
+      'Agent-商业化-oidoblii--许可证执行指南.md'
     );
   });
 
@@ -96,21 +100,21 @@ describe('Obsidian artifact bundles', () => {
       'Agent-商业化-doblii'
     );
     expect(bundle.mainNote.path).toBe(
-      'Agent-商业化-doblii/Agent-商业化.md'
+      'Agent-商业化.md'
     );
     expect(bundle.researchNotes).toHaveLength(2);
     expect(bundle.mainNote.content).toContain('children:');
     expect(bundle.mainNote.content).toContain(
-      '[[Agent-商业化-doblii/许可证执行指南|许可证执行指南]]'
+      '[[许可证执行指南|许可证执行指南]]'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
       'type: brain-distill-research'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
-      'parent: "[[Agent-商业化-doblii/Agent-商业化]]"'
+      'parent: "[[Agent-商业化]]"'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
-      '父报告：[[Agent-商业化-doblii/Agent-商业化|Agent 商业化]]'
+      '父报告：[[Agent-商业化|Agent 商业化]]'
     );
   });
 
@@ -137,8 +141,8 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.researchNotes.map(note => note.path)).toEqual([
-      'Agent-商业化-doblii/Agent-商业化-oidoblii--许可证执行指南.md',
-      'Agent-商业化-doblii/Agent-商业化-oidoblii--许可证执行指南-2.md',
+      'Agent-商业化-oidoblii--许可证执行指南.md',
+      'Agent-商业化-oidoblii--许可证执行指南-2.md',
     ]);
   });
 
@@ -166,5 +170,28 @@ describe('Obsidian artifact bundles', () => {
       ...bundle.researchNotes.map(note => note.path),
     ]);
     expect(maxActiveWrites).toBe(1);
+  });
+
+  it('creates the vault .obsidian directory under the report folder', async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), 'obsidian-bundle-'));
+    const vaultPath = join(rootPath, '报告xxx');
+    const execute = async (): Promise<unknown> => ({ ok: true });
+
+    try {
+      await saveObsidianArtifactBundle({
+        ...input,
+        vaultPath,
+      }, execute);
+
+      await access(join(vaultPath, '.obsidian'));
+      const bundle = buildObsidianArtifactBundle({
+        ...input,
+        vaultPath,
+      });
+
+      expect(bundle.mainNote.path).toBe('Agent-商业化.md');
+    } finally {
+      await rm(rootPath, { recursive: true, force: true });
+    }
   });
 });

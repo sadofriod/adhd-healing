@@ -8,6 +8,6 @@ export async function verifyStartupDependencies(): Promise<void> {
     await ensureObsidianCliAvailable(config.obsidianCliCommand);
   }
   console.log(`[startup] DeepSeek API key configured: ${config.deepseekApiKey.slice(0, 6)}...`);
-  console.log(`[startup] Obsidian vault path: ${config.obsidianVaultPath}`);
+  console.log(`[startup] Obsidian note container: ${config.obsidianVaultPath}`);
   console.log('[startup] Dependencies verified.');
 }

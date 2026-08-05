@@ -3,12 +3,14 @@ import type {
   DeepResearchArtifact,
   LlmTokenUsage,
 } from '../../types';
+import { config } from '../../config/env';
 import {
   buildReminderTitle,
   syncToAppleReminders,
 } from '../../services/reminders';
 import { saveObsidianArtifactBundle } from '../../services/obsidian-artifacts';
 import { getOrCreateSessionArtifactDirectoryPath } from '../../services/session-artifact-directory';
+import { join } from 'path';
 
 export type FinalizeWriteResult = {
   readonly directoryPath: string;
@@ -37,12 +39,14 @@ export async function runFinalizeWritePipeline(opts: {
     researchArtifacts,
     tokenUsage,
   } = opts;
-    const now = new Date();
-    const directoryPath = await getOrCreateSessionArtifactDirectoryPath(sessionId, title, now);
+  const now = new Date();
+  const directoryPath = await getOrCreateSessionArtifactDirectoryPath(sessionId, title, now);
+  const vaultPath = join(config.obsidianVaultPath, directoryPath);
 
   const bundle = await saveObsidianArtifactBundle({
     sessionId,
-      directoryPath,
+    directoryPath,
+    vaultPath,
     title,
     markdown: [
       markdown,

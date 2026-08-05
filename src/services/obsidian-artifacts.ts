@@ -1,3 +1,6 @@
+import { mkdir } from 'fs/promises';
+import { join } from 'path';
+import { config } from '../config/env';
 import { buildObsidianNote, type McpToolExecutor, type ObsidianNote } from './obsidian';
 import {
   createWikiLinkMaterializer,
@@ -11,6 +14,7 @@ import type { DeepResearchArtifact } from '../types';
 export type ObsidianArtifactBundleInput = {
   readonly sessionId?: string;
   readonly directoryPath?: string;
+  readonly vaultPath?: string;
   readonly title: string;
   readonly markdown: string;
   readonly milestone: string;
@@ -59,7 +63,7 @@ function getUniqueStem(title: string, used: Map<string, number>): string {
 }
 
 function buildArtifactPaths(
-  directoryPath: string,
+  _directoryPath: string,
   titles: readonly string[]
 ): readonly ArtifactPath[] {
   const used = new Map<string, number>();
@@ -67,14 +71,14 @@ function buildArtifactPaths(
     const stem = getUniqueStem(title, used);
     return {
       title,
-      path: `${directoryPath}/${stem}.md`,
-      linkTarget: `${directoryPath}/${stem}`,
+      path: `${stem}.md`,
+      linkTarget: stem,
     };
   });
 }
 
 function buildSessionArtifactPaths(
-  directoryPath: string,
+  _directoryPath: string,
   title: string,
   researchTitles: readonly string[],
   now: Date
@@ -85,16 +89,16 @@ function buildSessionArtifactPaths(
   const mainStem = buildVaultFilename(title, now).replace(/\.md$/i, '');
   const mainPath = {
     title,
-    path: `${directoryPath}/${mainStem}.md`,
-    linkTarget: `${directoryPath}/${mainStem}`,
+    path: `${mainStem}.md`,
+    linkTarget: mainStem,
   };
   const used = new Map<string, number>();
   const researchPaths = researchTitles.map(researchTitle => {
     const researchStem = `${mainStem}--${getUniqueStem(researchTitle, used)}`;
     return {
       title: researchTitle,
-      path: `${directoryPath}/${researchStem}.md`,
-      linkTarget: `${directoryPath}/${researchStem}`,
+      path: `${researchStem}.md`,
+      linkTarget: researchStem,
     };
   });
 
@@ -109,12 +113,12 @@ function buildWikiLink(path: ArtifactPath): string {
 }
 
 function buildStandaloneArtifactPaths(
-  directoryPath: string,
+  _directoryPath: string,
   researchTitles: readonly string[],
   title: string
 ): ArtifactPathSet {
   const [mainPath, ...researchPaths] = buildArtifactPaths(
-    directoryPath,
+    _directoryPath,
     [title, ...researchTitles]
   );
   if (!mainPath) throw new Error('无法生成主报告路径');
@@ -156,17 +160,22 @@ function appendParentLink(markdown: string, mainPath: ArtifactPath): string {
 }
 
 function buildLinkedNoteMarkdown(linkDocument: WikiLinkDocument): string {
+  const coreConclusion = linkDocument.mentions[0]?.excerpt ?? '暂无可直接引用的结论，需补充主报告中的明确表述。';
   const mentionLines = linkDocument.mentions.flatMap(mention => [
     `- 来源：[[${mention.sourceLinkTarget}|${mention.sourceTitle}]]`,
     `- 摘录：${mention.excerpt}`,
     '',
   ]);
   return [
-    '该节点由已归档内容中的显式双链整理而来，下面保留了当前已经写下的真实上下文。',
+    `# ${linkDocument.title}`,
     '',
-    '## 已记录上下文',
+    '## 核心结论',
     '',
-    ...mentionLines.slice(0, -1),
+    `- ${coreConclusion}`,
+    '',
+    '## 证据',
+    '',
+    ...(mentionLines.length > 0 ? mentionLines.slice(0, -1) : ['- 暂无可用来源摘录。']),
   ].join('\n');
 }
 
@@ -299,10 +308,13 @@ export async function saveObsidianArtifactBundle(
   executeTool: McpToolExecutor = executeMcpTool
 ): Promise<ObsidianArtifactBundle> {
   const bundle = buildObsidianArtifactBundle(input);
+  const vaultPath = input.vaultPath ?? join(config.obsidianVaultPath, bundle.directoryPath);
+  await mkdir(join(vaultPath, '.obsidian'), { recursive: true });
   const notes = [bundle.mainNote, ...bundle.researchNotes, ...bundle.linkedNotes];
   for (const note of notes) {
     console.log(`[obsidian] Saving artifact: ${note.path}`);
     const result = await writeObsidianNote(note.path, note.content, {
+      vaultPath,
       ...(executeTool === executeMcpTool ? {} : { backend: 'mcp' as const }),
       executeTool,
     });

@@ -2,9 +2,15 @@
 
 [English README](./README.md)
 
-这是一个面向单用户、Mac 本地运行的 Obsidian-First 想法澄清与蒸馏网关。内置终端 CLI 与 React 网页工作台共享同一套流式 API，任何可发送 HTTP 请求的自动化客户端也都可以接入。服务端通过 DeepSeek API（Vercel AI SDK）进行多轮结构化追问；会话完成后，通过 MCP 将完整报告写入 Obsidian，并向 Apple Reminders 下发极简行动标题。
+这是一个面向单用户、面向本地部署的 Obsidian-First 想法澄清与蒸馏网关。它把散落的闪念收拢成一份可长期保留的本地笔记：先用 DeepSeek 进行结构化澄清，再把结果落进你自己的 Obsidian Vault 容器下的独立报告子目录，而不是把知识托管到云端笔记工具。
 
-系统现已将会话历史持久化到 SQLite，因此可以暂停、恢复、切换历史会话，而不依赖单次网页交互。
+内置终端 CLI 与 React 网页工作台共享同一套流式 API，系统已经把会话历史持久化到 SQLite，因此可以暂停、恢复、切换历史会话，而不依赖单次网页交互。Apple Reminders 同步现已改为可选，默认关闭，让首轮体验更聚焦于核心的 Obsidian 归档闭环。
+
+## 20 分钟价值主张
+
+1. 克隆仓库。
+2. 配置 `DEEPSEEK_API_KEY` 与 `BRAIN_VAULT_PATH`。
+3. 运行 `pnpm run start:cli`，完成一次从想法到归档笔记的完整闭环。
 
 ## 功能概述
 
@@ -158,10 +164,11 @@ CLI 内置命令：
 
 ### 8. Obsidian 归档
 
-每个完成的对话都会在以 `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` 为根目录
-的 Vault 中创建一个带时间戳的独立产物目录。目录内包含主报告，以及所有
-高度相关、偏执行落地的深度调研报告；主子报告通过 frontmatter 父子关系和
-双向 `[[双链]]` 关联。原始输入和会话记录只保留在主报告中。
+每个完成的对话都会先在 `BRAIN_VAULT_PATH/OBSIDIAN_NOTE_FOLDER` 这个产物容器下
+创建一个带时间戳的独立报告目录，然后把该目录本身作为实际 Vault 根目录使用，
+`.obsidian` 也只会出现在这个报告目录里。目录内包含主报告，以及所有高度相关、
+偏执行落地的深度调研报告；主子报告通过 frontmatter 父子关系和双向 `[[双链]]`
+关联。原始输入和会话记录只保留在主报告中。
 
 调研主题由主澄清 Agent 自动选择，不设固定数量上限，但只允许直接影响主报告
 执行的领域进入产物。所有调研 Agent 必须先全部成功，系统才开始写入任何报告；
@@ -178,7 +185,7 @@ CLI 内置命令：
 
 ## 部署取舍
 
-当前默认运行形态是宿主 macOS + SQLite，而不是完整 Docker 化应用栈。这是有意为之：服务依赖本地 Vault 路径、Obsidian CLI 和 Apple Reminders 自动化，这些能力在宿主环境中更直接、更稳定，放进容器反而会增加额外转接成本。对于当前单用户、本地优先的工作流，SQLite 已经足够；Docker 只在 `mcp.json` 里被用作只读 GitHub MCP Server 的可选运行方式。只有当远程部署、非 macOS 贡献者接入，或多用户托管成为主要诉求时，才值得重新评估 Docker Compose。
+当前默认运行形态是宿主 macOS + SQLite，而不是完整 Docker 化应用栈。这是有意为之：服务依赖本地 Vault 路径、Obsidian CLI 以及可选的 Apple Reminders 自动化，这些能力在宿主环境中更直接、更稳定，放进容器反而会增加额外转接成本。对于当前单用户、本地优先的工作流，SQLite 已经足够；Docker 只在 `mcp.json` 里被用作只读 GitHub MCP Server 的可选运行方式。只有当远程部署、非 macOS 贡献者接入，或多用户托管成为主要诉求时，才值得重新评估 Docker Compose。
 
 ## API
 

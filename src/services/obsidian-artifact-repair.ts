@@ -64,7 +64,9 @@ function parseArtifactFile(file: ArtifactRepairFile): ParsedArtifactFile {
 }
 
 function replaceBundlePrefix(content: string, oldDirectoryName: string, newDirectoryName: string): string {
-  return content.replaceAll(`${oldDirectoryName}/`, `${newDirectoryName}/`);
+  return content
+    .replaceAll(`${oldDirectoryName}/`, '')
+    .replaceAll(`${newDirectoryName}/`, '');
 }
 
 function normalizeExcerpt(excerpt: string): string {
@@ -93,25 +95,22 @@ function appendMention(map: Map<string, Mention[]>, targetStem: string, mention:
 
 function collectMentions(
   files: readonly ParsedArtifactFile[],
-  directoryName: string,
   oldDirectoryName: string
 ): Map<string, Mention[]> {
   const mentionsByStem = new Map<string, Mention[]>();
 
   for (const file of files) {
-    const sourceLinkTarget = `${directoryName}/${file.stem}`;
-    const normalizedContent = replaceBundlePrefix(file.content, oldDirectoryName, directoryName);
-    normalizedContent.replace(
+    const sourceLinkTarget = file.stem;
+    file.content.replace(
       WIKI_LINK_PATTERN,
       (match, rawTarget, _rawAlias, offset) => {
         const target = String(rawTarget ?? '').trim();
-        const prefixes = [`${directoryName}/`, `${oldDirectoryName}/`];
-        const prefix = prefixes.find(candidate => target.startsWith(candidate));
-        if (!prefix) return match;
+        const prefix = `${oldDirectoryName}/`;
+        if (!target.startsWith(prefix)) return match;
         appendMention(mentionsByStem, target.slice(prefix.length), {
           sourceTitle: file.title,
           sourceLinkTarget,
-          excerpt: extractMentionExcerpt(normalizedContent, Number(offset)),
+          excerpt: extractMentionExcerpt(file.content, Number(offset)),
         });
         return match;
       }
@@ -127,14 +126,17 @@ function buildLinkedBody(title: string, mentions: readonly Mention[]): string {
     `- 摘录：${mention.excerpt}`,
     '',
   ]);
+  const coreConclusion = mentions[0]?.excerpt ?? '暂无可直接引用的结论，需补充主报告中的明确表述。';
   return [
     `# ${title}`,
     '',
-    '该节点由已归档内容中的显式双链整理而来，下面保留了当前已经写下的真实上下文。',
+    '## 核心结论',
     '',
-    '## 已记录上下文',
+    `- ${coreConclusion}`,
     '',
-    ...(mentionLines.length > 0 ? mentionLines.slice(0, -1) : ['- 暂未抽取到可复用上下文，请回到主报告补充明确引用。']),
+    '## 证据',
+    '',
+    ...(mentionLines.length > 0 ? mentionLines.slice(0, -1) : ['- 暂无可用来源摘录。']),
     '',
     FOOTER,
   ].join('\n');
@@ -168,7 +170,7 @@ export function repairLegacyArtifactDirectory(
 ): ArtifactRepairResult {
   const parsedFiles = files.map(parseArtifactFile);
   const nextDirectoryName = chooseDirectoryName(parsedFiles);
-  const mentionsByStem = collectMentions(parsedFiles, nextDirectoryName, directoryName);
+  const mentionsByStem = collectMentions(parsedFiles, directoryName);
 
   return {
     directoryName: nextDirectoryName,
