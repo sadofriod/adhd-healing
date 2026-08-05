@@ -14,6 +14,7 @@
     "start:gateway": "bun --env-file=.env scripts/start.ts",
     "start:cli": "bun --env-file=.env scripts/cli.ts",
     "archive:reclassify": "bun --env-file=.env scripts/reclassify-local-vault.ts",
+    "artifacts:repair": "bun scripts/repair-legacy-artifacts.ts",
     "test": "DATABASE_URL=file:/tmp/adhd-healing-test.db prisma migrate deploy && DATABASE_URL=file:/tmp/adhd-healing-test.db DEEPSEEK_API_KEY=test BRAIN_VAULT_PATH=/tmp/adhd-healing bun test",
     "lint": "eslint ."
   },

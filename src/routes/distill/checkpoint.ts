@@ -1,4 +1,5 @@
 import type { LlmClarifyDecision, LlmProgressDecision } from '../../types';
+import { config } from '../../config/env';
 import { writeObsidianNote } from '../../services/obsidian-writer';
 import { buildVaultFilename } from '../../services/vault/filename';
 
@@ -23,7 +24,7 @@ function getSessionTopic(session: readonly SessionMessage[]): string {
 
 function getCheckpointPath(topic: string, now: Date): string {
   const filename = buildVaultFilename(`${topic}-checkpoint`, now);
-  return `_session-checkpoints/${filename}`;
+  return `.local-vault/_session-checkpoints/${filename}`;
 }
 
 function getDecisionLabel(decision: DistillCheckpointDecision): string {
@@ -51,12 +52,13 @@ function buildCheckpointContent(
 }
 
 export async function persistDistillCheckpoint(
-  input: DistillCheckpointInput
+  input: DistillCheckpointInput,
+  writeNote: typeof writeObsidianNote = writeObsidianNote
 ): Promise<void> {
   const now = input.now ?? new Date();
   const topic = getSessionTopic(input.session);
   const path = getCheckpointPath(topic, now);
   const content = buildCheckpointContent(input.decision, input.session, now);
-  const result = await writeObsidianNote(path, content);
+  const result = await writeNote(path, content, { vaultPath: config.brainVaultPath });
   console.log(`[distill] 阶段性结论已写入 ${result.backend.toUpperCase()}: ${path}`);
 }

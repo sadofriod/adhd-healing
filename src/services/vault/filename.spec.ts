@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { buildArchiveRelativePath, buildVaultFilename } from './filename';
+import { buildArchiveRelativePath, buildArtifactDirectoryName, buildVaultFilename } from './filename';
 
 describe('buildVaultFilename', () => {
   it('adds a compact timestamp to avoid same-day overwrites', () => {
@@ -30,5 +30,16 @@ describe('buildArchiveRelativePath', () => {
     );
 
     expect(path).toBe('ai-工作流/提示词工程/2026-07-29-101112123-idea.md');
+  });
+});
+
+describe('buildArtifactDirectoryName', () => {
+  it('puts the title first and appends a compact second-level timestamp suffix', () => {
+    const directoryName = buildArtifactDirectoryName(
+      '回溯者 第一卷角色精简与文风去AI化',
+      new Date('2026-08-05T03:37:15.922Z')
+    );
+
+    expect(directoryName).toBe('回溯者-第一卷角色精简与文风去AI化-20260805-033715');
   });
 });

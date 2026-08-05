@@ -47,40 +47,45 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.mainNote.content).toContain(
-      '[[session-cmec2n97u0000abc123def456/MCP-实施指南|MCP 实施指南]]'
+      '[[Agent-商业化-20260801-090732/MCP-实施指南|MCP 实施指南]]'
     );
     expect(bundle.mainNote.content).toContain(
-      '[[session-cmec2n97u0000abc123def456/Obsidian-自动归档|Obsidian 自动归档]]'
+      '[[Agent-商业化-20260801-090732/Obsidian-自动归档|Obsidian 自动归档]]'
     );
     expect(bundle.linkedNotes.map(note => note.path)).toEqual([
-      'session-cmec2n97u0000abc123def456/MCP-实施指南.md',
-      'session-cmec2n97u0000abc123def456/Obsidian-自动归档.md',
+      'Agent-商业化-20260801-090732/MCP-实施指南.md',
+      'Agent-商业化-20260801-090732/Obsidian-自动归档.md',
     ]);
     expect(bundle.linkedNotes[0]!.content).toContain('type: brain-distill-link');
+    expect(bundle.linkedNotes[0]!.content).toContain('使用 MCP 实施指南 连接 Obsidian 自动归档。');
+    expect(bundle.linkedNotes[0]!.content).toContain('MCP 实施指南 — 约束工具接入。');
+    expect(bundle.linkedNotes[0]!.content).not.toContain('## 待补充');
   });
 
   it('keeps multiple finishes from one session under one directory', () => {
     const firstBundle = buildObsidianArtifactBundle({
       ...input,
       sessionId: 'cmec2n97u0000abc123def456',
+      directoryPath: 'Agent-商业化-20260801-090732',
     });
     const secondBundle = buildObsidianArtifactBundle({
       ...input,
       title: '第二次收束',
       sessionId: 'cmec2n97u0000abc123def456',
+      directoryPath: 'Agent-商业化-20260801-090732',
       now: new Date('2026-08-01T10:07:32.300Z'),
     });
 
-    expect(firstBundle.directoryPath).toBe('session-cmec2n97u0000abc123def456');
+    expect(firstBundle.directoryPath).toBe('Agent-商业化-20260801-090732');
     expect(secondBundle.directoryPath).toBe(firstBundle.directoryPath);
     expect(firstBundle.mainNote.path).toBe(
-      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化.md'
+      'Agent-商业化-20260801-090732/2026-08-01-090732300-Agent-商业化.md'
     );
     expect(secondBundle.mainNote.path).toBe(
-      'session-cmec2n97u0000abc123def456/2026-08-01-100732300-第二次收束.md'
+      'Agent-商业化-20260801-090732/2026-08-01-100732300-第二次收束.md'
     );
     expect(firstBundle.researchNotes[0]!.path).toBe(
-      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南.md'
+      'Agent-商业化-20260801-090732/2026-08-01-090732300-Agent-商业化--许可证执行指南.md'
     );
   });
 
@@ -88,24 +93,24 @@ describe('Obsidian artifact bundles', () => {
     const bundle = buildObsidianArtifactBundle(input);
 
     expect(bundle.directoryPath).toBe(
-      '2026-08-01-090732300-Agent-商业化'
+      'Agent-商业化-20260801-090732'
     );
     expect(bundle.mainNote.path).toBe(
-      '2026-08-01-090732300-Agent-商业化/Agent-商业化.md'
+      'Agent-商业化-20260801-090732/Agent-商业化.md'
     );
     expect(bundle.researchNotes).toHaveLength(2);
     expect(bundle.mainNote.content).toContain('children:');
     expect(bundle.mainNote.content).toContain(
-      '[[2026-08-01-090732300-Agent-商业化/许可证执行指南|许可证执行指南]]'
+      '[[Agent-商业化-20260801-090732/许可证执行指南|许可证执行指南]]'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
       'type: brain-distill-research'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
-      'parent: "[[2026-08-01-090732300-Agent-商业化/Agent-商业化]]"'
+      'parent: "[[Agent-商业化-20260801-090732/Agent-商业化]]"'
     );
     expect(bundle.researchNotes[0]!.content).toContain(
-      '父报告：[[2026-08-01-090732300-Agent-商业化/Agent-商业化|Agent 商业化]]'
+      '父报告：[[Agent-商业化-20260801-090732/Agent-商业化|Agent 商业化]]'
     );
   });
 
@@ -132,8 +137,8 @@ describe('Obsidian artifact bundles', () => {
     });
 
     expect(bundle.researchNotes.map(note => note.path)).toEqual([
-      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南.md',
-      'session-cmec2n97u0000abc123def456/2026-08-01-090732300-Agent-商业化--许可证执行指南-2.md',
+      'Agent-商业化-20260801-090732/2026-08-01-090732300-Agent-商业化--许可证执行指南.md',
+      'Agent-商业化-20260801-090732/2026-08-01-090732300-Agent-商业化--许可证执行指南-2.md',
     ]);
   });
 

@@ -23,6 +23,14 @@ export function buildTimestamp(now: Date): string {
   return timePart.replace(/[:.]/g, '').replace('Z', '').slice(0, 9);
 }
 
+function buildCompactArtifactDirectorySuffix(now: Date): string {
+  const iso = now.toISOString();
+  const [datePart = '1970-01-01', timePart = '00:00:00.000Z'] = iso.split('T');
+  const compactDate = datePart.replace(/-/g, '');
+  const compactTime = timePart.replace(/[:.]/g, '').replace('Z', '').slice(0, 6);
+  return `${compactDate}-${compactTime}`;
+}
+
 export function sanitizeArchiveSegment(value: string, fallback: string): string {
   const segment = buildSafeTitle(value).toLowerCase();
   if (segment.length > 0) return segment;
@@ -38,6 +46,10 @@ export function buildVaultFilename(title: string, now: Date = new Date()): strin
   const timestamp = buildTimestamp(now);
   const safeTitle = buildSafeTitle(title);
   return `${date}-${timestamp}-${safeTitle}.md`;
+}
+
+export function buildArtifactDirectoryName(title: string, now: Date = new Date()): string {
+  return `${buildSafeTitle(title)}-${buildCompactArtifactDirectorySuffix(now)}`;
 }
 
 export function getLocalArchiveRoot(): string {

@@ -5,11 +5,12 @@ import {
 } from './obsidian-links';
 import { executeMcpTool } from './mcp';
 import { writeObsidianNote } from './obsidian-writer';
-import { buildSafeTitle, buildVaultFilename } from './vault/filename';
+import { buildArtifactDirectoryName, buildSafeTitle, buildVaultFilename } from './vault/filename';
 import type { DeepResearchArtifact } from '../types';
 
 export type ObsidianArtifactBundleInput = {
   readonly sessionId?: string;
+  readonly directoryPath?: string;
   readonly title: string;
   readonly markdown: string;
   readonly milestone: string;
@@ -46,11 +47,7 @@ type RewrittenArtifactContent = {
 };
 
 function getDirectoryPath(title: string, now: Date): string {
-  return buildVaultFilename(title, now).replace(/\.md$/i, '');
-}
-
-function getSessionDirectoryPath(sessionId: string): string {
-  return `session-${buildSafeTitle(sessionId)}`;
+  return buildArtifactDirectoryName(title, now);
 }
 
 function getUniqueStem(title: string, used: Map<string, number>): string {
@@ -159,12 +156,17 @@ function appendParentLink(markdown: string, mainPath: ArtifactPath): string {
 }
 
 function buildLinkedNoteMarkdown(linkDocument: WikiLinkDocument): string {
+  const mentionLines = linkDocument.mentions.flatMap(mention => [
+    `- 来源：[[${mention.sourceLinkTarget}|${mention.sourceTitle}]]`,
+    `- 摘录：${mention.excerpt}`,
+    '',
+  ]);
   return [
-    `由 [[${linkDocument.sourceLinkTarget}|${linkDocument.sourceTitle}]] 中的显式双链创建，用于沉淀“${linkDocument.title}”这个节点的后续内容。`,
+    '该节点由已归档内容中的显式双链整理而来，下面保留了当前已经写下的真实上下文。',
     '',
-    '## 待补充',
+    '## 已记录上下文',
     '',
-    '- 在后续澄清或调研中补全该节点的定义、边界和执行结论。',
+    ...mentionLines.slice(0, -1),
   ].join('\n');
 }
 
@@ -255,9 +257,7 @@ export function buildObsidianArtifactBundle(
   input: ObsidianArtifactBundleInput
 ): ObsidianArtifactBundle {
   const now = input.now ?? new Date();
-  const directoryPath = input.sessionId
-    ? getSessionDirectoryPath(input.sessionId)
-    : getDirectoryPath(input.title, now);
+  const directoryPath = input.directoryPath ?? getDirectoryPath(input.title, now);
   const { mainPath, researchPaths } = resolveArtifactPaths(input, now, directoryPath);
   const rewrittenContent = rewriteArtifactContent(input, directoryPath, {
     mainPath,

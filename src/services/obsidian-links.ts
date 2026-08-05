@@ -7,8 +7,17 @@ export type LinkableDocument = {
 };
 
 export type WikiLinkDocument = LinkableDocument & {
+  readonly mentions: readonly WikiLinkMention[];
+};
+
+export type WikiLinkMention = {
   readonly sourceTitle: string;
   readonly sourceLinkTarget: string;
+  readonly excerpt: string;
+};
+
+type MutableWikiLinkDocument = LinkableDocument & {
+  readonly mentions: WikiLinkMention[];
 };
 
 const WIKI_LINK_PATTERN = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g;
@@ -59,22 +68,61 @@ function createLinkedDocument(
   rawTarget: string,
   directoryPath: string,
   usedStems: Map<string, number>,
-  source: LinkableDocument
-): WikiLinkDocument {
+  source: LinkableDocument,
+  excerpt: string
+): MutableWikiLinkDocument {
   const stem = getUniqueStem(rawTarget, usedStems);
   return {
     title: rawTarget,
     path: `${directoryPath}/${stem}.md`,
     linkTarget: `${directoryPath}/${stem}`,
+    mentions: [{
+      sourceTitle: source.title,
+      sourceLinkTarget: source.linkTarget,
+      excerpt,
+    }],
+  };
+}
+
+function normalizeExcerpt(excerpt: string): string {
+  return excerpt
+    .replace(WIKI_LINK_PATTERN, (_match, rawTarget, rawAlias) => String(rawAlias ?? rawTarget ?? '').trim())
+    .replace(/^[-*]\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+function extractMentionExcerpt(markdown: string, offset: number): string {
+  const lineStart = markdown.lastIndexOf('\n', Math.max(offset - 1, 0));
+  const lineEnd = markdown.indexOf('\n', offset);
+  const excerpt = markdown.slice(lineStart + 1, lineEnd === -1 ? markdown.length : lineEnd);
+  return normalizeExcerpt(excerpt);
+}
+
+function appendMention(
+  document: MutableWikiLinkDocument,
+  source: LinkableDocument,
+  excerpt: string
+): void {
+  const normalizedExcerpt = normalizeExcerpt(excerpt);
+  if (!normalizedExcerpt) return;
+  const duplicate = document.mentions.some(mention => (
+    mention.sourceLinkTarget === source.linkTarget
+      && mention.excerpt === normalizedExcerpt
+  ));
+  if (duplicate) return;
+  document.mentions.push({
     sourceTitle: source.title,
     sourceLinkTarget: source.linkTarget,
-  };
+    excerpt: normalizedExcerpt,
+  });
 }
 
 type MaterializerState = {
   readonly directoryPath: string;
   readonly knownTargets: Map<string, LinkableDocument>;
-  readonly linkedDocuments: Map<string, WikiLinkDocument>;
+  readonly linkedDocuments: Map<string, MutableWikiLinkDocument>;
   readonly usedStems: Map<string, number>;
 };
 
@@ -102,8 +150,8 @@ function getExistingTarget(
 function storeLinkedDocument(
   state: MaterializerState,
   lookupKey: string,
-  document: WikiLinkDocument
-): WikiLinkDocument {
+  document: MutableWikiLinkDocument
+): MutableWikiLinkDocument {
   state.linkedDocuments.set(lookupKey, document);
   rememberKnownTarget(state.knownTargets, document);
   return document;
@@ -112,15 +160,19 @@ function storeLinkedDocument(
 function resolveTargetDocument(
   state: MaterializerState,
   rawTarget: string,
-  source: LinkableDocument
+  source: LinkableDocument,
+  excerpt: string
 ): LinkableDocument {
   const lookupKey = createLookupKey(rawTarget);
   const existingTarget = getExistingTarget(state, lookupKey);
-  if (existingTarget) return existingTarget;
+  if (existingTarget) {
+    if ('mentions' in existingTarget) appendMention(existingTarget, source, excerpt);
+    return existingTarget;
+  }
   return storeLinkedDocument(
     state,
     lookupKey,
-    createLinkedDocument(rawTarget, state.directoryPath, state.usedStems, source)
+    createLinkedDocument(rawTarget, state.directoryPath, state.usedStems, source, excerpt)
   );
 }
 
@@ -134,11 +186,18 @@ function rewriteWikiLink(
   rawTarget: unknown,
   rawAlias: unknown,
   source: LinkableDocument,
-  state: MaterializerState
+  state: MaterializerState,
+  offset: number,
+  markdown: string
 ): string {
   const target = normalizeLinkTarget(String(rawTarget ?? ''));
   if (!target) return match;
-  const resolvedTarget = resolveTargetDocument(state, target, source);
+  const resolvedTarget = resolveTargetDocument(
+    state,
+    target,
+    source,
+    extractMentionExcerpt(markdown, offset)
+  );
   return `[[${resolvedTarget.linkTarget}|${getWikiLinkLabel(rawAlias, target)}]]`;
 }
 
@@ -158,11 +217,22 @@ export function createWikiLinkMaterializer(input: {
     rewriteMarkdown(markdown: string, source: LinkableDocument): string {
       return markdown.replace(
         WIKI_LINK_PATTERN,
-        (match, rawTarget, rawAlias) => rewriteWikiLink(match, rawTarget, rawAlias, source, state)
+        (match, rawTarget, rawAlias, offset) => rewriteWikiLink(
+          match,
+          rawTarget,
+          rawAlias,
+          source,
+          state,
+          Number(offset),
+          markdown
+        )
       );
     },
     getLinkedDocuments(): readonly WikiLinkDocument[] {
-      return Array.from(state.linkedDocuments.values());
+      return Array.from(state.linkedDocuments.values()).map(document => ({
+        ...document,
+        mentions: [...document.mentions],
+      }));
     },
   };
 }

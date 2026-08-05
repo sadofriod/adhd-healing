@@ -8,6 +8,7 @@ import {
   syncToAppleReminders,
 } from '../../services/reminders';
 import { saveObsidianArtifactBundle } from '../../services/obsidian-artifacts';
+import { getOrCreateSessionArtifactDirectoryPath } from '../../services/session-artifact-directory';
 
 export type FinalizeWriteResult = {
   readonly directoryPath: string;
@@ -36,9 +37,12 @@ export async function runFinalizeWritePipeline(opts: {
     researchArtifacts,
     tokenUsage,
   } = opts;
+    const now = new Date();
+    const directoryPath = await getOrCreateSessionArtifactDirectoryPath(sessionId, title, now);
 
   const bundle = await saveObsidianArtifactBundle({
     sessionId,
+      directoryPath,
     title,
     markdown: [
       markdown,
@@ -62,6 +66,7 @@ export async function runFinalizeWritePipeline(opts: {
     subcategory: archive.subcategory,
     tags: archive.tags,
     researchArtifacts,
+    now,
   });
 
   if (milestone) {
