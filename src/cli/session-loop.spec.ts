@@ -21,11 +21,20 @@ function createFakeIo(inputs: string[]): FakeIo {
   };
 }
 
-function createSession(id: string, title: string): SessionHistoryItem {
+function createSession(
+  id: string,
+  title: string,
+  pendingTurnInput: string | null = null
+): SessionHistoryItem {
   return {
     id,
     title,
     status: 'FINISHED',
+    activityEntries: [],
+    pendingTurnInput,
+    pendingTurn: pendingTurnInput
+      ? { text: pendingTurnInput, attachments: [] }
+      : null,
     messages: [],
     tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     createdAt: '2026-08-04T00:00:00.000Z',
@@ -91,6 +100,30 @@ describe('runSessionLoop', () => {
     expect(calls).toEqual([
       { text: 'first ask', reset: false },
       { text: 'first ask', reset: false, resume: true, sessionId: 'session-3' },
+    ]);
+  });
+
+  test('restores a paused turn after switching to an older session', async () => {
+    const io = createFakeIo(['/switch 1', '/continue', '/exit']);
+    const calls: DistillRequest[] = [];
+
+    await runSessionLoop(
+      { io },
+      {
+        resetSession: async () => undefined,
+        listSessionHistory: async () => [
+          createSession('session-1', 'paused session', '挂起中的输入'),
+        ],
+        activateSession: async () => true,
+        runDistill: async (request: DistillRequest, _report: LlmActivityReporter) => {
+          calls.push(request);
+          return { status: 'CONTINUE', sessionId: 'session-1', text: 'resumed' };
+        },
+      }
+    );
+
+    expect(calls).toEqual([
+      { text: '挂起中的输入', reset: false, resume: true, sessionId: 'session-1' },
     ]);
   });
 

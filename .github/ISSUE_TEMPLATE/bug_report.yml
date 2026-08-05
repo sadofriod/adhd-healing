@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible bug, regression, or broken workflow
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        English and Chinese are both welcome. Please keep the report specific and reproducible.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and the expected behavior.
+      placeholder: When I ..., the app ..., but I expected ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can someone reproduce it?
+      description: List the smallest reliable reproduction steps.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Submit ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Bun, pnpm, browser, model setup, or any relevant local tooling details.
+      placeholder: macOS 15, Bun 1.x, pnpm 10.x, Chrome ..., DeepSeek ..., Obsidian CLI ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or extra context
+      description: Paste errors, stack traces, screenshots, or links that help explain the problem.
+    validations:
+      required: false

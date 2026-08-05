@@ -14,7 +14,13 @@ type SessionHistoryPanelProps = {
   readonly onContinue: (session: SessionHistoryItem) => Promise<void>;
 };
 
-function getStatusLabel(status: SessionHistoryItem['status'], locale: Locale): string {
+function isPausedSession(session: SessionHistoryItem): boolean {
+  return session.status === 'ACTIVE' && session.pendingTurn !== null;
+}
+
+function getStatusLabel(session: SessionHistoryItem, locale: Locale): string {
+  if (isPausedSession(session)) return getWebMessage(locale, 'sessionStatusPaused');
+  const { status } = session;
   if (status === 'ACTIVE') return getWebMessage(locale, 'sessionStatusActive');
   if (status === 'FINISHED') return getWebMessage(locale, 'sessionStatusFinished');
   return getWebMessage(locale, 'sessionStatusAbandoned');
@@ -54,7 +60,7 @@ export function SessionHistoryPanel(props: SessionHistoryPanelProps): JSX.Elemen
     <li className="history-item" key={session.id}>
       <div className="history-item-copy">
         <div className="history-item-meta">
-          <span>{getStatusLabel(session.status, props.locale)}</span>
+          <span>{getStatusLabel(session, props.locale)}</span>
           <time dateTime={session.updatedAt}>{formatDate(session.updatedAt, props.intlLocale)}</time>
         </div>
         <strong>{session.title}</strong>

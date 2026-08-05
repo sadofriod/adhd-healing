@@ -16,6 +16,9 @@ describe('SessionHistoryPanel', () => {
           id: 'session-1',
           status: 'FINISHED',
           title: '完成后继续讨论',
+          activityEntries: [],
+          pendingTurnInput: null,
+          pendingTurn: null,
           messages: [{ role: 'user', content: '问题' }],
           tokenUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
           createdAt: '2026-08-03T00:00:00.000Z',
@@ -45,5 +48,37 @@ describe('SessionHistoryPanel', () => {
 
     expect(markup).toContain('Session history');
     expect(markup).toContain('Loading...');
+  });
+
+  test('renders paused sessions distinctly when a pending turn exists', () => {
+    const markup = renderToStaticMarkup(
+      <SessionHistoryPanel
+        errorMessage={null}
+        isLoading={false}
+        intlLocale="zh-CN"
+        locale="zh"
+        onClose={() => undefined}
+        onContinue={async () => undefined}
+        sessions={[{
+          id: 'session-2',
+          status: 'ACTIVE',
+          title: '等待恢复',
+          activityEntries: [],
+          pendingTurnInput: '继续这个任务',
+          pendingTurn: {
+            text: '继续这个任务',
+            attachments: [],
+          },
+          messages: [{ role: 'user', content: '继续这个任务' }],
+          tokenUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+          createdAt: '2026-08-03T00:00:00.000Z',
+          updatedAt: '2026-08-03T00:00:00.000Z',
+          finishedAt: null,
+        }]}
+      />
+    );
+
+    expect(markup).toContain('已暂停');
+    expect(markup).toContain('等待恢复');
   });
 });

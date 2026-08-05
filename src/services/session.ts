@@ -1,5 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { LlmTokenUsage, SessionHistoryItem } from '../types';
+import type {
+  DistillAttachment,
+  LlmActivityEvent,
+  LlmTokenUsage,
+  PendingSessionTurn,
+  SessionHistoryItem,
+} from '../types';
 import { database } from './database';
 import { addTokenUsage, EMPTY_TOKEN_USAGE } from './token-usage';
 
@@ -27,7 +33,9 @@ const SESSION_STATUS_BY_VALUE: Readonly<Record<string, SessionStatus | undefined
 
 type SessionState = {
   readonly id: string;
+  readonly activityEntries: LlmActivityEvent[];
   readonly messages: SessionMessage[];
+  pendingTurn: PendingSessionTurn | null;
   status: SessionStatus;
   tokenUsage: LlmTokenUsage;
   researchMemory: readonly SessionResearchMemory[];
@@ -71,6 +79,11 @@ function isJsonRecord(value: unknown): value is object {
   return typeof value === 'object' && value !== null;
 }
 
+function requireJsonRecord(value: unknown, errorMessage: string): Record<string, unknown> {
+  if (isJsonRecord(value) && !Array.isArray(value)) return value as Record<string, unknown>;
+  throw new Error(errorMessage);
+}
+
 function sortJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortJsonValue);
   if (isJsonRecord(value)) return sortJsonRecord(value);
@@ -97,6 +110,43 @@ function createResearchMemoryKey(toolName: string, input: unknown): string {
   return `${toolName}:${serializeJson(sortJsonValue(input))}`;
 }
 
+function parseAttachment(value: unknown): DistillAttachment {
+  const attachment = requireJsonRecord(value, 'Session pending turn contains an invalid attachment');
+  if (typeof attachment.name !== 'string' || attachment.name.trim().length === 0) {
+    throw new Error('Session pending turn contains an invalid attachment name');
+  }
+  if (typeof attachment.content !== 'string' || attachment.content.length === 0) {
+    throw new Error('Session pending turn contains an invalid attachment content');
+  }
+  if (!Number.isSafeInteger(attachment.size) || Number(attachment.size) < 0) {
+    throw new Error('Session pending turn contains an invalid attachment size');
+  }
+  if (attachment.mimeType !== undefined && typeof attachment.mimeType !== 'string') {
+    throw new Error('Session pending turn contains an invalid attachment mime type');
+  }
+  return {
+    name: attachment.name,
+    content: attachment.content,
+    size: Number(attachment.size),
+    ...(attachment.mimeType === undefined ? {} : { mimeType: attachment.mimeType }),
+  };
+}
+
+function parsePendingTurn(value: unknown): PendingSessionTurn {
+  const pendingTurn = requireJsonRecord(value, 'Session pending turn contains an invalid payload');
+  if (typeof pendingTurn.text !== 'string' || pendingTurn.text.trim().length === 0) {
+    throw new Error('Session pending turn contains an invalid text');
+  }
+  const attachments = pendingTurn.attachments;
+  if (!Array.isArray(attachments)) {
+    throw new Error('Session pending turn contains invalid attachments');
+  }
+  return {
+    text: pendingTurn.text,
+    attachments: attachments.map(parseAttachment),
+  };
+}
+
 function parseRole(role: string): SessionMessage['role'] {
   if (role === 'user' || role === 'assistant') return role;
   throw new Error(`Session history contains an invalid role: ${role}`);
@@ -106,6 +156,64 @@ function parseStatus(status: string): SessionStatus {
   const parsedStatus = SESSION_STATUS_BY_VALUE[status];
   if (parsedStatus) return parsedStatus;
   throw new Error(`Session history contains an invalid status: ${status}`);
+}
+
+function parseTokenCount(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(`Session activity contains an invalid ${label}: ${value}`);
+  }
+  return Number(value);
+}
+
+function parseOptionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return value;
+  throw new Error(`Session activity contains an invalid ${label}`);
+}
+
+function parseProgressPhase(value: unknown): 'process' | 'tool-call' | 'sub-agent' {
+  if (value === 'process' || value === 'tool-call' || value === 'sub-agent') return value;
+  throw new Error(`Session activity contains an invalid progress phase: ${value}`);
+}
+
+function parseActivityEvent(value: unknown): LlmActivityEvent {
+  const event = requireJsonRecord(value, 'Session activity contains an invalid payload');
+  if (event.type === 'progress') {
+    if (typeof event.message !== 'string') {
+      throw new Error('Session activity contains an invalid progress message');
+    }
+    return {
+      type: 'progress',
+      phase: parseProgressPhase(event.phase),
+      message: event.message,
+      details: parseOptionalString(event.details, 'progress details'),
+      operationId: parseOptionalString(event.operationId, 'operation id'),
+      ...(event.input === undefined ? {} : { input: event.input }),
+      ...(event.output === undefined ? {} : { output: event.output }),
+    };
+  }
+
+  if (event.type === 'usage') {
+    if (typeof event.source !== 'string') {
+      throw new Error('Session activity contains an invalid usage source');
+    }
+    if (typeof event.estimatedCostUsd !== 'number') {
+      throw new Error('Session activity contains an invalid estimated cost');
+    }
+    const usage = requireJsonRecord(event.usage, 'Session activity contains an invalid usage payload');
+    return {
+      type: 'usage',
+      source: event.source,
+      usage: {
+        inputTokens: parseTokenCount(usage.inputTokens, 'input token count'),
+        outputTokens: parseTokenCount(usage.outputTokens, 'output token count'),
+        totalTokens: parseTokenCount(usage.totalTokens, 'total token count'),
+      },
+      estimatedCostUsd: event.estimatedCostUsd,
+    };
+  }
+
+  throw new Error(`Session activity contains an invalid event type: ${String(event.type)}`);
 }
 
 function queuePersistence(operation: () => Promise<unknown>): void {
@@ -118,7 +226,9 @@ async function createSession(): Promise<SessionState> {
   const session = await database.session.create({ data: {} });
   return {
     id: session.id,
+    activityEntries: [],
     messages: [],
+    pendingTurn: null,
     status: 'ACTIVE',
     tokenUsage: EMPTY_TOKEN_USAGE,
     researchMemory: [],
@@ -127,6 +237,7 @@ async function createSession(): Promise<SessionState> {
 
 const SESSION_LOAD_QUERY = {
   include: {
+    activityEntries: { orderBy: { id: 'asc' } },
     messages: { orderBy: { id: 'asc' } },
     researchMemory: { orderBy: { updatedAt: 'asc' } },
   },
@@ -138,6 +249,8 @@ function toSessionState(persisted: {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  pendingTurnJson: string | null;
+  activityEntries: Array<{ eventJson: string }>;
   messages: Array<{ role: string; content: string }>;
   researchMemory: Array<{
     key: string;
@@ -146,12 +259,18 @@ function toSessionState(persisted: {
     outputJson: string;
   }>;
 }): SessionState {
+  const messages = persisted.messages.map(message => ({
+    role: parseRole(message.role),
+    content: message.content,
+  }));
+  const fallbackPendingTurn = getFallbackPendingTurn(messages);
   return {
     id: persisted.id,
-    messages: persisted.messages.map(message => ({
-      role: parseRole(message.role),
-      content: message.content,
-    })),
+    activityEntries: persisted.activityEntries.map(entry => parseActivityEvent(parseJson(entry.eventJson))),
+    messages,
+    pendingTurn: persisted.pendingTurnJson
+      ? parsePendingTurn(parseJson(persisted.pendingTurnJson))
+      : fallbackPendingTurn,
     status: parseStatus(persisted.status),
     tokenUsage: {
       inputTokens: persisted.inputTokens,
@@ -202,21 +321,54 @@ function getSessionTitle(messages: readonly SessionMessage[]): string {
   return firstUserMessage.content.slice(0, 48);
 }
 
+function getFallbackPendingTurn(messages: readonly SessionMessage[]): PendingSessionTurn | null {
+  const latestMessage = messages.at(-1);
+  if (!latestMessage) return null;
+  if (latestMessage.role !== 'user') return null;
+  return {
+    text: latestMessage.content,
+    attachments: [],
+  };
+}
+
+function getPendingTurnInput(pendingTurn: PendingSessionTurn | null): string | null {
+  return pendingTurn?.text ?? null;
+}
+
+function queuePendingTurnPersistence(
+  sessionId: string,
+  pendingTurn: PendingSessionTurn | null
+): void {
+  queuePersistence(() => database.session.update({
+    where: { id: sessionId },
+    data: { pendingTurnJson: pendingTurn ? serializeJson(pendingTurn) : null },
+  }));
+}
+
 export async function listSessionHistory(): Promise<readonly SessionHistoryItem[]> {
   await flushSessionPersistence();
   const sessions = await database.session.findMany({
     orderBy: { updatedAt: 'desc' },
-    include: { messages: { orderBy: { id: 'asc' } } },
+    include: {
+      activityEntries: { orderBy: { id: 'asc' } },
+      messages: { orderBy: { id: 'asc' } },
+    },
   });
   return sessions.map(session => {
     const messages = session.messages.map(message => ({
       role: parseRole(message.role),
       content: message.content,
     }));
+    const pendingTurn = session.pendingTurnJson
+      ? parsePendingTurn(parseJson(session.pendingTurnJson))
+      : getFallbackPendingTurn(messages);
     return {
       id: session.id,
       status: parseStatus(session.status),
       title: getSessionTitle(messages),
+      activityEntries: session.activityEntries.map(entry => parseActivityEvent(parseJson(entry.eventJson))),
+      pendingTurnInput: getPendingTurnInput(pendingTurn),
+      pendingTurn,
       messages,
       tokenUsage: {
         inputTokens: session.inputTokens,
@@ -259,6 +411,10 @@ export function getSession(): SessionMessage[] {
   return getRuntimeContext().currentSession?.messages ?? [];
 }
 
+export function getSessionActivityEntries(): readonly LlmActivityEvent[] {
+  return getRuntimeContext().currentSession?.activityEntries ?? [];
+}
+
 export async function resetSession(): Promise<void> {
   await flushSessionPersistence();
   const runtime = getRuntimeContext();
@@ -284,6 +440,23 @@ export async function appendToSession(
   queuePersistence(() => database.sessionMessage.create({
     data: { sessionId: session.id, role, content },
   }));
+  if (role === 'assistant') {
+    session.pendingTurn = null;
+    queuePendingTurnPersistence(session.id, null);
+  }
+}
+
+export function recordSessionActivity(event: LlmActivityEvent): void {
+  const runtime = getRuntimeContext();
+  if (!runtime.currentSession) throw new Error('Cannot record session activity without a session');
+  runtime.currentSession.activityEntries.push(event);
+  const sessionId = runtime.currentSession.id;
+  queuePersistence(() => database.sessionActivity.create({
+    data: {
+      sessionId,
+      eventJson: serializeJson(event),
+    },
+  }));
 }
 
 function isPendingUserMessage(
@@ -296,7 +469,8 @@ function isPendingUserMessage(
 
 export async function prepareUserTurn(
   content: string,
-  resume: boolean
+  resume: boolean,
+  pendingTurn: PendingSessionTurn = { text: content, attachments: [] }
 ): Promise<SessionMessage[]> {
   const session = await ensureSession();
   if (!resume) {
@@ -305,6 +479,8 @@ export async function prepareUserTurn(
       data: { status: 'ACTIVE', finishedAt: null },
     });
     session.status = 'ACTIVE';
+    session.pendingTurn = pendingTurn;
+    queuePendingTurnPersistence(session.id, pendingTurn);
     await appendToSession('user', content);
     return session.messages;
   }

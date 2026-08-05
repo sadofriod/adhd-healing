@@ -15,12 +15,13 @@ import { buildMemoryInstruction } from './prompts';
 import { getResearchSystemPrompt } from './research-agent';
 import { collectToolActivities } from './tool-usage';
 import type { SessionMessage } from './types';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/locale';
 
-const REQUIRED_SECTIONS = [
-  '# 深度调研',
-  '## 执行结论',
-  '## 实施步骤',
-  '## 风险与验证',
+const REQUIRED_SECTION_VARIANTS = [
+  ['# 深度调研', '# Deep Research'],
+  ['## 执行结论', '## Execution Conclusions'],
+  ['## 实施步骤', '## Implementation Steps'],
+  ['## 风险与验证', '## Risks And Validation'],
 ] as const;
 const ignoreActivity: LlmActivityReporter = () => undefined;
 
@@ -29,11 +30,11 @@ const ResearchResultSchema = z.object({
   summary: z.string().trim().min(1),
   tags: z.array(z.string().trim().min(1).max(30)).min(2).max(8),
 }).superRefine((value, context) => {
-  REQUIRED_SECTIONS.forEach(section => {
-    if (value.markdown.includes(section)) return;
+  REQUIRED_SECTION_VARIANTS.forEach(sectionVariants => {
+    if (sectionVariants.some(section => value.markdown.includes(section))) return;
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `markdown 缺少章节：${section}`,
+      message: `markdown missing required section variant: ${sectionVariants.join(' | ')}`,
       path: ['markdown'],
     });
   });
@@ -44,6 +45,7 @@ export type ResearchAgentInput = {
   readonly mainTitle: string;
   readonly mainMarkdown: string;
   readonly sessionMessages: readonly SessionMessage[];
+  readonly locale: Locale;
   readonly invalidResponse?: string;
 };
 
@@ -57,7 +59,50 @@ export type DeepResearchInput = {
   readonly mainTitle: string;
   readonly mainMarkdown: string;
   readonly sessionMessages: readonly SessionMessage[];
+  readonly locale?: Locale;
 };
+
+function getResearchOutputLanguageInstruction(locale: Locale): string {
+  if (locale === 'en') {
+    return [
+      'Output language rule (strict):',
+      '- markdown, summary, and tags MUST be English.',
+      '- JSON keys remain unchanged.',
+      '- Use section headings in English: # Deep Research / ## Execution Conclusions / ## Implementation Steps / ## Risks And Validation.',
+    ].join('\n');
+  }
+  return [
+    '输出语言规则（严格执行）：',
+    '- markdown、summary、tags 必须使用简体中文。',
+    '- JSON 键名保持不变。',
+    '- 章节标题使用中文：# 深度调研 / ## 执行结论 / ## 实施步骤 / ## 风险与验证。',
+  ].join('\n');
+}
+
+function getResearchUsageSource(locale: Locale, title: string): string {
+  if (locale === 'en') return `Deep research: ${title}`;
+  return `深度调研：${title}`;
+}
+
+function getResearchToolCallMessage(locale: Locale, title: string, toolName: string): string {
+  if (locale === 'en') return `Deep research "${title}": ${toolName}`;
+  return `深度调研「${title}」：${toolName}`;
+}
+
+function getResearchStartMessage(locale: Locale, title: string, attempt: number): string {
+  if (locale === 'en') return `Deep research "${title}" started (attempt ${attempt})`;
+  return `深度调研「${title}」开始第 ${attempt} 轮执行`;
+}
+
+function getResearchCompletedMessage(locale: Locale, title: string): string {
+  if (locale === 'en') return `Deep research "${title}" completed`;
+  return `深度调研「${title}」已完成`;
+}
+
+function getResearchValidationFailedMessage(locale: Locale, title: string, attempt: number): string {
+  if (locale === 'en') return `Deep research "${title}" validation failed on attempt ${attempt}; retrying`;
+  return `深度调研「${title}」第 ${attempt} 轮输出校验失败，正在修正`;
+}
 
 function extractJsonObject(rawText: string): string {
   const match = rawText.match(/\{[\s\S]*\}/);
@@ -100,6 +145,8 @@ function buildResearchPrompt(input: ResearchAgentInput): string {
     '',
     '输出严格 JSON：',
     '{"markdown":"完整 Markdown","summary":"执行摘要","tags":["标签1","标签2"]}',
+    '',
+    getResearchOutputLanguageInstruction(input.locale),
     retryInstruction,
     buildMemoryInstruction(getSessionResearchMemory()),
   ].join('\n');
@@ -135,7 +182,7 @@ async function generateResearchText(
         reportActivity({
           type: 'progress',
           phase: 'tool-call',
-          message: `深度调研「${input.topic.title}」：${activity.toolName}`,
+          message: getResearchToolCallMessage(input.locale, input.topic.title, activity.toolName),
           operationId: activity.operationId,
           input: activity.input,
           ...(activity.output === undefined ? {} : { output: activity.output }),
@@ -144,7 +191,7 @@ async function generateResearchText(
     },
   });
   reportTokenUsages(
-    `深度调研：${input.topic.title}`,
+    getResearchUsageSource(input.locale, input.topic.title),
     result.steps.map(step => step.usage),
     reportActivity
   );
@@ -207,7 +254,7 @@ async function researchTopic(
     reportActivity({
       type: 'progress',
       phase: 'sub-agent',
-      message: `深度调研「${input.topic.title}」开始第 ${attempt} 轮执行`,
+      message: getResearchStartMessage(input.locale, input.topic.title, attempt),
       details: input.topic.executionGoal,
     });
     const rawText = await generate({ ...input, invalidResponse }, reportActivity);
@@ -216,7 +263,7 @@ async function researchTopic(
       reportActivity({
         type: 'progress',
         phase: 'sub-agent',
-        message: `深度调研「${input.topic.title}」已完成`,
+        message: getResearchCompletedMessage(input.locale, input.topic.title),
         details: artifact.summary,
       });
       return artifact;
@@ -225,7 +272,7 @@ async function researchTopic(
       reportActivity({
         type: 'progress',
         phase: 'sub-agent',
-        message: `深度调研「${input.topic.title}」第 ${attempt} 轮输出校验失败，正在修正`,
+        message: getResearchValidationFailedMessage(input.locale, input.topic.title, attempt),
         details: invalidResponse,
       });
     }
@@ -237,11 +284,13 @@ export async function runDeepResearch(
   generate: ResearchTextGenerator = generateResearchText,
   reportActivity: LlmActivityReporter = ignoreActivity
 ): Promise<readonly DeepResearchArtifact[]> {
+  const locale = input.locale ?? DEFAULT_LOCALE;
   const topics = deduplicateResearchTopics(input.topics);
   return Promise.all(topics.map(topic => researchTopic({
     topic,
     mainTitle: input.mainTitle,
     mainMarkdown: input.mainMarkdown,
     sessionMessages: input.sessionMessages,
+    locale,
   }, generate, reportActivity)));
 }

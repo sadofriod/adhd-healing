@@ -1,3 +1,5 @@
+import type { Locale } from './i18n/locale';
+
 export type WorkflowStatus = 'CONTINUE' | 'FINISH' | 'PAUSED';
 
 export type SessionHistoryStatus = 'ACTIVE' | 'FINISHED' | 'ABANDONED';
@@ -7,11 +9,19 @@ export type SessionHistoryMessage = {
   readonly content: string;
 };
 
+export type PendingSessionTurn = {
+  readonly text: string;
+  readonly attachments: readonly DistillAttachment[];
+};
+
 export type SessionHistoryItem = {
   readonly id: string;
   readonly status: SessionHistoryStatus;
   readonly title: string;
   readonly messages: readonly SessionHistoryMessage[];
+  readonly activityEntries: readonly LlmActivityEvent[];
+  readonly pendingTurnInput: string | null;
+  readonly pendingTurn: PendingSessionTurn | null;
   readonly tokenUsage: LlmTokenUsage;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -24,6 +34,7 @@ export type DistillRequest = {
   readonly resume?: boolean;
   readonly sessionId?: string;
   readonly attachments?: readonly DistillAttachment[];
+  readonly locale?: Locale;
 };
 
 export type DistillAttachment = {

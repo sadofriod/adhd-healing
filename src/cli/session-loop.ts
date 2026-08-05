@@ -36,6 +36,10 @@ type SessionLoopState = {
   sessionId?: string;
 };
 
+function getPendingResumeText(session: SessionHistoryItem | undefined): string | undefined {
+  return session?.pendingTurn?.text ?? session?.pendingTurnInput ?? undefined;
+}
+
 const COMMAND_NAMES = ['new', 'continue', 'history', 'switch', 'help', 'exit'] as const satisfies readonly CommandName[];
 
 function isCommandName(value: string | undefined): value is CommandName {
@@ -171,7 +175,7 @@ async function handleSwitchCommand(
   );
   if (!switched) return false;
 
-  state.pendingResumeText = undefined;
+  state.pendingResumeText = getPendingResumeText(sessions.find(session => session.id === sessionId));
   state.sessionId = sessionId;
   return false;
 }
@@ -226,7 +230,11 @@ async function handleCommand(
   return createCommandHandlers(command, io, state, deps)[command.name]();
 }
 
-async function runInitialMode(options: SessionLoopOptions, deps: Required<LoopDeps>): Promise<void> {
+async function runInitialMode(
+  options: SessionLoopOptions,
+  state: SessionLoopState,
+  deps: Required<LoopDeps>
+): Promise<void> {
   if (options.startNewSession) {
     await deps.resetSession();
   }
@@ -234,6 +242,10 @@ async function runInitialMode(options: SessionLoopOptions, deps: Required<LoopDe
   if (!options.sessionId) return;
   const switched = await deps.activateSession(options.sessionId);
   if (!switched) throw new Error(`Session not found: ${options.sessionId}`);
+  const sessions = await deps.listSessionHistory();
+  state.pendingResumeText = getPendingResumeText(
+    sessions.find(session => session.id === options.sessionId)
+  );
 }
 
 async function handleUserTurn(
@@ -288,7 +300,7 @@ export async function runSessionLoop(
       runDistill: deps.runDistill ?? runDistillOrchestration,
     };
     const state: SessionLoopState = { sessionId: options.sessionId };
-    await runInitialMode(options, resolvedDeps);
+    await runInitialMode(options, state, resolvedDeps);
 
     options.io.writeLine('CLI session started. Type /help for commands.');
     await runInteractiveLoop(options.io, state, resolvedDeps);

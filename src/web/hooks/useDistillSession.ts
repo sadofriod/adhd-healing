@@ -19,6 +19,7 @@ import type {
 } from '../types';
 
 type DistillSessionState = {
+  readonly composerDraft: ComposerDraft | null;
   readonly conversation: ConversationState;
   readonly errorMessage: string | null;
   readonly executionStatus: ExecutionStatus;
@@ -34,6 +35,11 @@ type PendingTask = {
   readonly attachments: readonly DistillAttachment[];
   readonly userEntry: TimelineEntry;
   readonly usageEvents: LlmUsageEvent[];
+};
+
+type ComposerDraft = {
+  readonly text: string;
+  readonly attachments: readonly DistillAttachment[];
 };
 
 type CompletedDistillResponse = Exclude<DistillApiResponse, { status: 'PAUSED' }>;
@@ -91,6 +97,13 @@ function createPendingTask(
   };
 }
 
+function toComposerDraft(task: PendingTask): ComposerDraft {
+  return {
+    text: task.text,
+    attachments: task.attachments,
+  };
+}
+
 function createInitialConversation(locale: Locale): ConversationState {
   const initialPrompt = getWebMessage(locale, 'hookInitialPrompt');
   return {
@@ -98,6 +111,38 @@ function createInitialConversation(locale: Locale): ConversationState {
     entries: [createTimelineEntry('assistant', initialPrompt, 0)],
     finalText: null,
     finalTokenUsage: null,
+  };
+}
+
+function createProgressEntries(
+  activityEntries: readonly LlmActivityEvent[]
+): readonly ProgressEntry[] {
+  return activityEntries.map(event => ({ id: crypto.randomUUID(), ...event }));
+}
+
+function getPendingTurnInput(session: SessionHistoryItem): string | null {
+  return session.pendingTurn?.text ?? session.pendingTurnInput;
+}
+
+function getPendingTurnAttachments(session: SessionHistoryItem): readonly DistillAttachment[] {
+  return session.pendingTurn?.attachments ?? [];
+}
+
+function createPendingTaskFromHistory(
+  session: SessionHistoryItem,
+  conversation: ConversationState
+): PendingTask | null {
+  const pendingTurnInput = getPendingTurnInput(session);
+  if (!pendingTurnInput) return null;
+
+  const restoredEntry = conversation.entries.at(-1);
+  if (restoredEntry?.role !== 'user') return null;
+
+  return {
+    text: pendingTurnInput,
+    attachments: getPendingTurnAttachments(session),
+    userEntry: restoredEntry,
+    usageEvents: [],
   };
 }
 
@@ -112,7 +157,9 @@ function createConversationFromHistory(session: SessionHistoryItem, locale: Loca
     .reverse()
     .find(message => message.role === 'assistant');
   return {
-    prompt: latestAssistant?.content ?? initialPrompt,
+    prompt: getPendingTurnInput(session)
+      ? getWebMessage(locale, 'hookPausedPrompt')
+      : (latestAssistant?.content ?? initialPrompt),
     entries,
     finalText: null,
     finalTokenUsage: null,
@@ -138,7 +185,14 @@ async function fetchDistill(
       'Content-Type': 'application/json',
       'X-Locale': locale,
     },
-    body: JSON.stringify({ text, reset, resume, sessionId: sessionId ?? undefined, attachments }),
+    body: JSON.stringify({
+      text,
+      reset,
+      resume,
+      sessionId: sessionId ?? undefined,
+      attachments,
+      locale,
+    }),
   });
   return readDistillStream(response, onActivity, locale);
 }
@@ -222,14 +276,8 @@ function getCompletionFields(result: CompletedDistillResponse, locale: Locale): 
   return { prompt: result.text, finalText: null, finalTokenUsage: null };
 }
 
-function getProgressForExecution(
-  current: readonly ProgressEntry[],
-  resume: boolean
-): readonly ProgressEntry[] {
-  return resume ? current : [];
-}
-
 export function useDistillSession(locale: Locale): DistillSessionState {
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null);
   const [conversation, setConversation] = useState<ConversationState>(() => createInitialConversation(locale));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus>('idle');
@@ -242,7 +290,6 @@ export function useDistillSession(locale: Locale): DistillSessionState {
     setExecutionStatus('running');
     setErrorMessage(null);
     setPendingReset(false);
-    setProgressEntries(current => getProgressForExecution(current, resume));
     await runTask(task, reset, resume, sessionIdRef.current, locale, {
       onActivity: event => {
         if (event.type === 'usage') task.usageEvents.push(event);
@@ -257,18 +304,21 @@ export function useDistillSession(locale: Locale): DistillSessionState {
   function pauseTask(task: PendingTask, sessionId?: string): void {
     if (sessionId) sessionIdRef.current = sessionId;
     pendingTaskRef.current = task;
+    setComposerDraft(toComposerDraft(task));
     setConversation(current => pauseConversation(current, task, locale));
     setExecutionStatus('paused');
   }
 
   function completeTask(task: PendingTask, result: CompletedDistillResponse): void {
     sessionIdRef.current = result.sessionId;
+    setComposerDraft(null);
     setConversation(current => completeConversation(current, task, result, locale));
     pendingTaskRef.current = null;
     setExecutionStatus('idle');
   }
 
   function failTask(error: unknown): void {
+    setComposerDraft(null);
     setErrorMessage(getErrorMessage(error, locale));
     setExecutionStatus('idle');
   }
@@ -286,6 +336,7 @@ export function useDistillSession(locale: Locale): DistillSessionState {
   }
 
   function resetSession(): void {
+    setComposerDraft(null);
     setConversation(createInitialConversation(locale));
     setErrorMessage(null);
     setPendingReset(true);
@@ -296,16 +347,19 @@ export function useDistillSession(locale: Locale): DistillSessionState {
   }
 
   function loadSession(session: SessionHistoryItem): void {
+    const restoredConversation = createConversationFromHistory(session, locale);
+    const restoredPendingTask = createPendingTaskFromHistory(session, restoredConversation);
     sessionIdRef.current = session.id;
-    setConversation(createConversationFromHistory(session, locale));
+    setComposerDraft(restoredPendingTask ? toComposerDraft(restoredPendingTask) : null);
+    setConversation(restoredConversation);
     setErrorMessage(null);
     setPendingReset(false);
-    setProgressEntries([]);
-    pendingTaskRef.current = null;
-    setExecutionStatus('idle');
+    setProgressEntries(createProgressEntries(session.activityEntries));
+    pendingTaskRef.current = restoredPendingTask;
+    setExecutionStatus(restoredPendingTask ? 'paused' : 'idle');
   }
 
-  return { conversation, errorMessage, executionStatus, progressEntries,
+  return { composerDraft, conversation, errorMessage, executionStatus, progressEntries,
     loadSession, resetSession, resumeTask, submitText };
 }
 

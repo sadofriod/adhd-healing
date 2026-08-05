@@ -12,6 +12,12 @@ const REQUEST: DistillRequest = {
   reset: true,
 };
 
+const EN_REQUEST: DistillRequest = {
+  text: 'Analyze this repository',
+  reset: true,
+  locale: 'en',
+};
+
 function buildFinalDecision(includeResearchTopics: boolean): LlmFinalDecision {
   return {
     type: 'final',
@@ -142,5 +148,39 @@ describe('processDistill', () => {
 
     expect(response.status).toBe('FINISH');
     expect(checkpointCalled).toBeFalse();
+  });
+
+  test('returns english final text and propagates english locale to deep research', async () => {
+    const progressMessages: string[] = [];
+    let deepResearchLocale: DistillRequest['locale'] | undefined;
+
+    const response = await processDistill(EN_REQUEST, event => {
+      if (event.type !== 'progress') return;
+      progressMessages.push(event.message);
+    }, {
+      makeDecision: async () => buildFinalDecision(true),
+      runDeepResearch: async input => {
+        deepResearchLocale = input.locale;
+        return [{
+          title: 'License boundary',
+          markdown: '# Deep Research\n## Execution Conclusions\nConclusion\n## Implementation Steps\nSteps\n## Risks And Validation\nValidation',
+          summary: 'Research summary',
+          tags: ['research', 'license'],
+        }];
+      },
+      runFinalizeWritePipeline: async () => ({
+        directoryPath: '/tmp/idea',
+        mainLink: 'obsidian://idea',
+      }),
+    });
+
+    expect(response.status).toBe('FINISH');
+    expect(response.text).toContain('Distillation complete!');
+    expect(response.text).toContain('Archived to Obsidian via MCP: obsidian://idea');
+    expect(response.text).toContain('Deep research reports: 1');
+    expect(deepResearchLocale).toBe('en');
+    expect(progressMessages).toContain('Started processing current user input.');
+    expect(progressMessages).toContain('Persisting Obsidian artifacts via MCP and creating reminders');
+    expect(progressMessages).toContain('Final output persisted. Closing current session.');
   });
 });

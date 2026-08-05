@@ -13,15 +13,28 @@ model Session {
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
   totalTokens  Int      @default(0)
+  pendingTurnJson String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   finishedAt   DateTime?
 
-  messages       SessionMessage[]
-  researchMemory SessionResearchMemory[]
+  activityEntries SessionActivity[]
+  messages        SessionMessage[]
+  researchMemory  SessionResearchMemory[]
 
   @@index([status, updatedAt])
   @@index([updatedAt])
+}
+
+model SessionActivity {
+  id        Int      @id @default(autoincrement())
+  sessionId String
+  eventJson String
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, id])
 }
 
 model SessionMessage {

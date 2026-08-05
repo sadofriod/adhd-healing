@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Locale } from '../../i18n/locale';
-import { DEFAULT_LOCALE } from '../../i18n/locale';
+import { DEFAULT_LOCALE, normalizeLocale } from '../../i18n/locale';
 import { getServerMessage } from '../../i18n/server-messages';
 import type { DistillRequest } from '../../types';
 
@@ -25,6 +25,7 @@ function createDistillRequestSchema(locale: Locale) {
     resume: z.boolean().default(false),
     sessionId: z.string().trim().min(1).optional(),
     attachments: z.array(attachmentSchema).default([]),
+    locale: z.string().trim().min(1).transform(normalizeLocale).optional(),
   });
 }
 

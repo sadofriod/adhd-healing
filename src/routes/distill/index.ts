@@ -3,12 +3,13 @@ import type {
   DistillRequest,
   DistillStreamEvent,
   LlmActivityReporter,
+  LlmProgressDecision,
 } from '../../types';
-import { getRequestLocale } from '../../i18n/locale';
+import { getRequestLocale, type Locale } from '../../i18n/locale';
 import { isRecoverableNetworkError } from '../../services/network-error';
 import { validateDistillRequest, ValidationError } from './validate';
 import { processDistill } from './process';
-import { getCurrentSessionId, runWithSessionContext } from '../../services/session';
+import { getCurrentSessionId, recordSessionActivity, runWithSessionContext } from '../../services/session';
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
@@ -44,6 +45,30 @@ function getHandledErrorResponse(error: unknown): Response | null {
     return errorResponse(400, error.message);
   }
   return null;
+}
+
+function createProcessEvent(message: string, details?: string): LlmProgressDecision {
+  return {
+    type: 'progress',
+    phase: 'process',
+    message,
+    ...(details ? { details } : {}),
+  };
+}
+
+function getPausedByNetworkMessage(locale: Locale): string {
+  if (locale === 'en') return 'Network error detected. Task has been paused.';
+  return '网络错误，任务已暂停';
+}
+
+function getUnhandledTaskFailureMessage(locale: Locale): string {
+  if (locale === 'en') return 'Task execution failed';
+  return '任务执行失败';
+}
+
+function writeSessionProgressEvent(writer: StreamWriter, event: LlmProgressDecision): void {
+  if (getCurrentSessionId()) recordSessionActivity(event);
+  writer.writeEvent(event);
 }
 
 function createStreamWriter(
@@ -88,8 +113,10 @@ async function streamDistill(
     });
   } catch (error) {
     const message = getErrorMessage(error);
+    const locale = reqData.locale ?? 'zh';
     if (isRecoverableNetworkError(error)) {
       console.warn(`[distill:${requestId}] Paused after network failure (${Date.now() - startedAt}ms)`, error);
+      writeSessionProgressEvent(writer, createProcessEvent(getPausedByNetworkMessage(locale), message));
       writer.writeEvent({
         type: 'result',
         result: {
@@ -100,6 +127,7 @@ async function streamDistill(
       });
     } else {
       console.error(`[distill:${requestId}] Unhandled error (${Date.now() - startedAt}ms)`, error);
+      writeSessionProgressEvent(writer, createProcessEvent(getUnhandledTaskFailureMessage(locale), message));
       writer.writeEvent({ type: 'error', error: message });
     }
   } finally {
@@ -155,7 +183,11 @@ export async function handleDistill(req: Request): Promise<Response> {
 
     try {
       const reqData = await validateDistillRequest(req, locale);
-      return createProductionStreamResponse(reqData, requestId, startedAt);
+      const payload: DistillRequest = {
+        ...reqData,
+        locale: reqData.locale ?? locale,
+      };
+      return createProductionStreamResponse(payload, requestId, startedAt);
     } catch (error) {
       const handledResponse = getHandledErrorResponse(error);
       if (handledResponse) {

@@ -1,6 +1,7 @@
 import type { SessionMessage } from './types';
 import type { LlmProgressDecision } from '../../types';
 import type { SessionResearchMemory } from '../session';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/locale';
 
 const DECISION_PROMPT_TEMPLATE = `
 下面是当前会话历史（JSON）：
@@ -27,6 +28,54 @@ progress 仅用于确实无法在本次生成中取得结果的异步步骤。�
 
 researchTopics 可以为空数组。只有垂直、细分或交叉领域会直接改变主报告执行方案时才加入；普通背景知识、弱相关延伸和主报告已充分覆盖的内容不得加入。每个主题会启动独立深度调研子 Agent，子 Agent 不向用户追问。
 `.trim();
+
+const DECISION_PROMPT_TEMPLATE_EN = `
+Here is the current session history (JSON):
+{session}
+
+Decide first whether you still need to ask a follow-up question.
+
+Output must be strict JSON only. Do not output Markdown code fences. Do not output extra explanations.
+
+If any unknown can still change the core pain point, technical direction, first deliverable, or the 20-minute action, you must ask exactly one most critical follow-up question instead of finishing. You may output final only when there are no meaningful high-impact unknowns left.
+
+Markdown must be suitable as a standalone Obsidian note: focus on one clear decision/milestone with enough context; keep wiki links \`[[...]]\` sparse and intentional; each linked target must be explicitly chosen for durable knowledge value. Add researchTopics only when a vertical/niche/cross-domain topic is both highly relevant and independent enough to deserve separate deep research.
+
+If you still need user input, output:
+{"type":"clarify","message":"A single follow-up question only"}
+
+If you are still in internal analysis, tool execution, or sub-agent research and cannot clarify/finalize yet, output:
+{"type":"progress","phase":"process | tool-call | sub-agent","message":"Current internal progress"}
+
+Use progress only for truly asynchronous internal steps. After tool results arrive, you must output clarify or final based on available facts. Do not keep outputting progress only to continue searching. Do not re-query facts already obtained.
+
+If you can finalize now, output:
+{"type":"final","message":"Short lead-in for the final Markdown","markdown":"Complete Markdown report with semantic Obsidian wiki links","milestone":"Reminder title that starts with a verb and is ideally <=24 chars, without any fixed prefix","title":"Stable clean archive title suitable as an Obsidian node name","researchTopics":[{"title":"Stable concrete deep-research output title","scope":"Clear research boundary","relevance":"Why this directly changes implementation","executionGoal":"A concrete execution-guiding outcome after research"}]}
+
+researchTopics may be an empty array. Add a topic only when it can directly change implementation choices of the main report. Exclude weakly-related expansion, generic background, or content already sufficiently covered in the main report. Each topic will launch an independent deep-research sub-agent that does not ask the user.
+`.trim();
+
+function getOutputLanguageInstruction(locale: Locale): string {
+  if (locale === 'en') {
+    return [
+      'Output language rule (strict):',
+      '- All user-facing text values MUST be in English.',
+      '- This includes message, markdown, milestone, title, summary, tags, and progress text.',
+      '- Keep JSON keys and enums unchanged (type, phase, clarify/progress/final, etc.).',
+    ].join('\n');
+  }
+  return [
+    '输出语言规则（严格执行）：',
+    '- 所有面向用户的文本值必须使用简体中文。',
+    '- 包括 message、markdown、milestone、title、summary、tags、progress 文本。',
+    '- JSON 键名和枚举值保持不变（type、phase、clarify/progress/final 等）。',
+  ].join('\n');
+}
+
+function getDecisionPromptTemplate(locale: Locale): string {
+  if (locale === 'en') return DECISION_PROMPT_TEMPLATE_EN;
+  return DECISION_PROMPT_TEMPLATE;
+}
 
 function serializeMemoryOutput(output: unknown): string {
   try {
@@ -63,12 +112,13 @@ ${JSON.stringify(progress)}
 export function buildDecisionPrompt(
   sessionMessages: readonly SessionMessage[],
   progress?: LlmProgressDecision,
-  memory: readonly SessionResearchMemory[] = []
+  memory: readonly SessionResearchMemory[] = [],
+  locale: Locale = DEFAULT_LOCALE
 ): string {
-  const prompt = DECISION_PROMPT_TEMPLATE.replace(
+  const prompt = getDecisionPromptTemplate(locale).replace(
     '{session}',
     JSON.stringify(sessionMessages)
-  ) + buildMemoryInstruction(memory);
+  ) + `\n\n${getOutputLanguageInstruction(locale)}` + buildMemoryInstruction(memory);
   if (!progress) return prompt;
   return `${prompt}\n\n${buildProgressInstruction(progress)}`;
 }

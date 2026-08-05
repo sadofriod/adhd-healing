@@ -7,8 +7,14 @@ This project is local-first, macOS-hosted, and intentionally optimized for a sin
 ## Before You Start
 
 - Read [README.md](./README.md), [README.zh-CN.md](./README.zh-CN.md), and [docs/setup.md](./docs/setup.md) before changing setup or behavior.
-- For large product or architecture changes, open an issue first so the direction can be aligned before implementation.
+- For large product or architecture changes, start with a GitHub Discussion or issue so the direction can be aligned before implementation.
 - Keep changes scoped. Avoid mixing behavior changes with unrelated refactors.
+
+## Community Channels
+
+- Use GitHub Discussions for questions, early product exploration, and broader architecture conversations.
+- Use GitHub Issues for actionable bugs and scoped feature requests.
+- Follow [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) in issues, pull requests, discussions, and review threads.
 
 ## Local Setup
 
@@ -48,6 +54,7 @@ Notes:
 - Describe the behavior change, not just the code diff.
 - Call out risks, migrations, or environment changes.
 - List the validation you ran locally.
+- Use the pull request template to make review context explicit.
 - Update docs when commands, configuration, API shape, or workflows change.
 - Keep PRs reviewable; smaller focused PRs are preferred over broad rewrites.
 

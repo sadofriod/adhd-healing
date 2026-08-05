@@ -6,12 +6,15 @@ import {
   clearSession,
   deleteSessionHistory,
   flushSessionPersistence,
+  getSessionActivityEntries,
   getCurrentSessionId,
   getSession,
   getSessionResearchMemory,
   getSessionTokenUsage,
+  listSessionHistory,
   markSessionFinished,
   prepareUserTurn,
+  recordSessionActivity,
   resetSession,
   rememberSessionResearch,
   runWithSessionContext,
@@ -131,6 +134,33 @@ describe('session task resume', () => {
 });
 
 describe('session persistence', () => {
+  test('lists the pending turn input for paused sessions', async () => {
+    await resetSession();
+    await prepareUserTurn('展开后的输入', false, {
+      text: '等待恢复的输入',
+      attachments: [{
+        name: 'notes.md',
+        content: '# attachment',
+        mimeType: 'text/markdown',
+        size: 12,
+      }],
+    });
+    await flushSessionPersistence();
+
+    const [session] = await listSessionHistory();
+
+    expect(session?.pendingTurnInput).toBe('等待恢复的输入');
+    expect(session?.pendingTurn).toEqual({
+      text: '等待恢复的输入',
+      attachments: [{
+        name: 'notes.md',
+        content: '# attachment',
+        mimeType: 'text/markdown',
+        size: 12,
+      }],
+    });
+  });
+
   test('starts a fresh session in a new runtime without inheriting prior memory', async () => {
     let previousSessionId = '';
 
@@ -159,6 +189,17 @@ describe('session persistence', () => {
   test('reloads messages and research memory from SQLite', async () => {
     await resetSession();
     await prepareUserTurn('持久化问题', false);
+    recordSessionActivity({
+      type: 'progress',
+      phase: 'process',
+      message: '已开始处理本轮输入',
+    });
+    recordSessionActivity({
+      type: 'usage',
+      source: '澄清决策',
+      usage: { inputTokens: 320, outputTokens: 48, totalTokens: 368 },
+      estimatedCostUsd: 0.00010976,
+    });
     await appendToSession('assistant', '持久化回答');
     await rememberSessionResearch({
       toolName: 'browser_search',
@@ -177,6 +218,19 @@ describe('session persistence', () => {
       { role: 'user', content: '持久化问题' },
       { role: 'assistant', content: '持久化回答' },
       { role: 'user', content: '继续追问' },
+    ]);
+    expect(getSessionActivityEntries()).toEqual([
+      {
+        type: 'progress',
+        phase: 'process',
+        message: '已开始处理本轮输入',
+      },
+      {
+        type: 'usage',
+        source: '澄清决策',
+        usage: { inputTokens: 320, outputTokens: 48, totalTokens: 368 },
+        estimatedCostUsd: 0.00010976,
+      },
     ]);
     expect(getSessionResearchMemory()[0]?.output).toEqual({ result: 'stored' });
   });

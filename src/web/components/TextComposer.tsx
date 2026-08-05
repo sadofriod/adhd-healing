@@ -9,10 +9,16 @@ type AttachmentDraft = DistillAttachment & {
   readonly id: string;
 };
 
+type RestoredComposerDraft = {
+  readonly text: string;
+  readonly attachments: readonly DistillAttachment[];
+};
+
 type TextComposerProps = {
   readonly disabled: boolean;
   readonly locale: Locale;
   readonly prompt: string;
+  readonly restoredDraft?: RestoredComposerDraft | null;
   readonly onSubmit: (text: string, attachments: readonly DistillAttachment[]) => Promise<void>;
 };
 
@@ -25,11 +31,27 @@ async function readAttachment(file: File): Promise<DistillAttachment> {
   };
 }
 
+function isAttachmentDraft(
+  attachment: DistillAttachment | AttachmentDraft
+): attachment is AttachmentDraft {
+  return 'id' in attachment;
+}
+
+function getAttachmentKey(
+  attachment: DistillAttachment | AttachmentDraft,
+  index: number
+): string {
+  if (isAttachmentDraft(attachment)) return attachment.id;
+  return `${attachment.name}:${attachment.size}:${index}`;
+}
+
 export function TextComposer(props: TextComposerProps): JSX.Element {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const visibleText = props.restoredDraft?.text ?? value;
+  const visibleAttachments = props.restoredDraft?.attachments ?? attachments;
   const canSubmit = value.trim().length > 0 && !props.disabled;
 
   async function handleFileSelection(event: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -94,16 +116,18 @@ export function TextComposer(props: TextComposerProps): JSX.Element {
         </button>
         <span className="attachment-hint">{getWebMessage(props.locale, 'composerAttachmentHint')}</span>
       </div>
-      {attachments.length > 0 ? (
+      {visibleAttachments.length > 0 ? (
         <div className="attachment-list" aria-label={getWebMessage(props.locale, 'composerAttachmentList')}>
-          {attachments.map(attachment => (
-            <div className="attachment-pill" key={attachment.id}>
+            {visibleAttachments.map((attachment, index) => (
+              <div className="attachment-pill" key={getAttachmentKey(attachment, index)}>
               <span>{`${attachment.name} · ${attachment.size.toLocaleString()} bytes`}</span>
               <button
                 aria-label={`${getWebMessage(props.locale, 'composerAttachmentRemove')} ${attachment.name}`}
                 className="attachment-remove"
-                disabled={props.disabled}
-                onClick={() => removeAttachment(attachment.id)}
+                  disabled={props.disabled || !isAttachmentDraft(attachment) || props.restoredDraft !== undefined && props.restoredDraft !== null}
+                  onClick={() => {
+                    if (isAttachmentDraft(attachment)) removeAttachment(attachment.id);
+                  }}
                 type="button"
               >
                 <X aria-hidden="true" size={14} />
@@ -122,7 +146,7 @@ export function TextComposer(props: TextComposerProps): JSX.Element {
           onChange={event => setValue(event.currentTarget.value)}
           placeholder={props.prompt}
           rows={3}
-          value={value}
+          value={visibleText}
         />
         <button
           aria-label={getWebMessage(props.locale, 'composerSend')}

@@ -50,7 +50,7 @@ describe('decision generation session memory integration', () => {
         input: { owner: 'sadofriod', repo: 'agent-company' },
         output: { ok: false, error: '404 Not Found' },
       },
-    ], event => events.push(event));
+    ], 'zh', event => events.push(event));
 
     expect(getSessionResearchMemory()).toHaveLength(1);
     expect(getSessionResearchMemory()[0]).toMatchObject({

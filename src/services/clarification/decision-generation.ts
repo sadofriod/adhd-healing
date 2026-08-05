@@ -10,21 +10,35 @@ import { buildDecisionPrompt } from './prompts';
 import { collectToolActivities, type ToolActivity } from './tool-usage';
 import type { LlmActivityReporter } from '../../types';
 import type { SessionMessage } from './types';
+import { DEFAULT_LOCALE, type Locale } from '../../i18n/locale';
 
 const ignoreActivity: LlmActivityReporter = () => undefined;
 
 export function buildDecisionAgentPrompt(
-  sessionMessages: SessionMessage[]
+  sessionMessages: SessionMessage[],
+  locale: Locale = DEFAULT_LOCALE
 ): string {
   return buildDecisionPrompt(
     sessionMessages,
     undefined,
-    getSessionResearchMemory()
+    getSessionResearchMemory(),
+    locale
   );
+}
+
+function getDecisionToolCallMessage(locale: Locale, toolName: string): string {
+  if (locale === 'en') return `Decision step: ${toolName}`;
+  return `澄清决策：${toolName}`;
+}
+
+function getDecisionUsageSource(locale: Locale): string {
+  if (locale === 'en') return 'Decision generation';
+  return '澄清决策';
 }
 
 export async function recordDecisionToolActivities(
   activities: readonly ToolActivity[],
+  locale: Locale,
   reportActivity: LlmActivityReporter
 ): Promise<void> {
   await Promise.all(activities.map(async activity => {
@@ -38,7 +52,7 @@ export async function recordDecisionToolActivities(
     reportActivity({
       type: 'progress',
       phase: 'tool-call',
-      message: `澄清决策：${activity.toolName}`,
+      message: getDecisionToolCallMessage(locale, activity.toolName),
       operationId: activity.operationId,
       input: activity.input,
       ...(activity.output === undefined ? {} : { output: activity.output }),
@@ -48,6 +62,7 @@ export async function recordDecisionToolActivities(
 
 export async function generateDecisionText(
   sessionMessages: SessionMessage[],
+  locale: Locale = DEFAULT_LOCALE,
   reportActivity: LlmActivityReporter = ignoreActivity
 ): Promise<string> {
   const client = getLlmClient();
@@ -56,7 +71,7 @@ export async function generateDecisionText(
   const result = await generateText({
     model: client(CHAT_MODEL),
     system: SYSTEM_PROMPT,
-    prompt: buildDecisionAgentPrompt(sessionMessages),
+    prompt: buildDecisionAgentPrompt(sessionMessages, locale),
     tools: {
       browser_search: createBrowserSearchTool(),
       ...mcpTools,
@@ -65,11 +80,11 @@ export async function generateDecisionText(
     maxSteps: 5,
     onStepFinish: async step => {
       const activities = collectToolActivities([step], mcpToolNames);
-      await recordDecisionToolActivities(activities, reportActivity);
+      await recordDecisionToolActivities(activities, locale, reportActivity);
     },
   });
 
-  reportTokenUsages('澄清决策', result.steps.map(step => step.usage), reportActivity);
+  reportTokenUsages(getDecisionUsageSource(locale), result.steps.map(step => step.usage), reportActivity);
 
   return result.text;
 }

@@ -66,6 +66,7 @@ export function App(): JSX.Element {
   const { intlLocale, locale, toggleLocale } = useLocale();
   const t = (key: WebMessageKey): string => getWebMessage(locale, key);
   const {
+    composerDraft,
     conversation,
     errorMessage,
     executionStatus,
@@ -157,6 +158,7 @@ export function App(): JSX.Element {
             disabled={isComposerDisabled(isSubmitting, isPaused)}
             locale={locale}
             prompt={conversation.prompt}
+            restoredDraft={composerDraft}
             onSubmit={submitText}
           />
         </section>
