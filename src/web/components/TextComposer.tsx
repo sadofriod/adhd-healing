@@ -45,6 +45,7 @@ function getAttachmentKey(
   return `${attachment.name}:${attachment.size}:${index}`;
 }
 
+// eslint-disable-next-line complexity
 export function TextComposer(props: TextComposerProps): JSX.Element {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');

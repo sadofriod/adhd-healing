@@ -1,5 +1,5 @@
 import type { Dirent } from 'fs';
-import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { repairLegacyArtifactDirectory, type ArtifactRepairFile } from '../src/services/obsidian-artifact-repair';
 

@@ -37,7 +37,10 @@ type SessionLoopState = {
 };
 
 function getPendingResumeText(session: SessionHistoryItem | undefined): string | undefined {
-  return session?.pendingTurn?.text ?? session?.pendingTurnInput ?? undefined;
+  if (!session) return undefined;
+  if (session.pendingTurn?.text) return session.pendingTurn.text;
+  if (session.pendingTurnInput) return session.pendingTurnInput;
+  return undefined;
 }
 
 const COMMAND_NAMES = ['new', 'continue', 'history', 'switch', 'help', 'exit'] as const satisfies readonly CommandName[];

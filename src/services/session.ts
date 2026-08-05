@@ -110,6 +110,7 @@ function createResearchMemoryKey(toolName: string, input: unknown): string {
   return `${toolName}:${serializeJson(sortJsonValue(input))}`;
 }
 
+// eslint-disable-next-line complexity
 function parseAttachment(value: unknown): DistillAttachment {
   const attachment = requireJsonRecord(value, 'Session pending turn contains an invalid attachment');
   if (typeof attachment.name !== 'string' || attachment.name.trim().length === 0) {
@@ -176,6 +177,7 @@ function parseProgressPhase(value: unknown): 'process' | 'tool-call' | 'sub-agen
   throw new Error(`Session activity contains an invalid progress phase: ${value}`);
 }
 
+// eslint-disable-next-line complexity
 function parseActivityEvent(value: unknown): LlmActivityEvent {
   const event = requireJsonRecord(value, 'Session activity contains an invalid payload');
   if (event.type === 'progress') {

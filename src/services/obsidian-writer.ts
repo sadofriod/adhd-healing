@@ -97,9 +97,10 @@ async function writeWithCli(
     content,
     vaultPath
   );
+  const cliWorkingDirectory = dirname(absolutePath);
 
   const result = spawnSync(cliCommand, cliArgs, {
-    cwd: vaultPath,
+    cwd: cliWorkingDirectory,
     encoding: 'utf8',
     stdio: 'pipe',
   });

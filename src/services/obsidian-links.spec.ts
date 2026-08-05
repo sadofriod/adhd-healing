@@ -36,8 +36,13 @@ describe('obsidian explicit wiki-link materialization', () => {
         title: 'MCP 实施指南',
         path: 'session-123/MCP-实施指南.md',
         linkTarget: 'session-123/MCP-实施指南',
-        sourceTitle: '主报告',
-        sourceLinkTarget: 'session-123/2026-main',
+        mentions: [
+          {
+            sourceTitle: '主报告',
+            sourceLinkTarget: 'session-123/2026-main',
+            excerpt: '参考 许可证执行指南，并补齐 MCP 文档。',
+          },
+        ],
       },
     ]);
   });

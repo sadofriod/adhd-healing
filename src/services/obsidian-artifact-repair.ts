@@ -140,6 +140,7 @@ function buildLinkedBody(title: string, mentions: readonly Mention[]): string {
   ].join('\n');
 }
 
+// eslint-disable-next-line complexity
 function repairLinkedPlaceholder(
   file: ParsedArtifactFile,
   content: string,

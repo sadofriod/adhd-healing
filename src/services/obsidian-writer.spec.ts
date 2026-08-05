@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, readFile, rm } from 'fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { writeObsidianNote } from './obsidian-writer';
@@ -14,6 +14,7 @@ describe('Obsidian writer adapter', () => {
   it('writes to the vault and invokes the configured CLI command', async () => {
     const vaultPath = await mkdtemp(join(tmpdir(), 'obsidian-cli-test-'));
     tempDirs.push(vaultPath);
+    const cwdMarkerPath = join(vaultPath, 'nested', 'cwd.txt');
 
     await writeObsidianNote('nested/cli-note.md', '# hello\n', {
       backend: 'cli',
@@ -21,8 +22,9 @@ describe('Obsidian writer adapter', () => {
       cliCommand: 'python3',
       cliArgs: [
         '-c',
-        'import pathlib, sys; p = pathlib.Path(sys.argv[1]); p.write_text(p.read_text(encoding="utf-8") + "\\nCLI_OK", encoding="utf-8")',
+        'import pathlib, sys; p = pathlib.Path(sys.argv[1]); cwd_marker = pathlib.Path(sys.argv[2]); p.write_text(p.read_text(encoding="utf-8") + "\\nCLI_OK", encoding="utf-8"); cwd_marker.write_text(pathlib.Path.cwd().as_posix(), encoding="utf-8")',
         '{path}',
+        '{vault}/nested/cwd.txt',
       ],
       executeTool: async () => {
         throw new Error('MCP should not be used for CLI mode');
@@ -30,8 +32,11 @@ describe('Obsidian writer adapter', () => {
     });
 
     const content = await readFile(join(vaultPath, 'nested/cli-note.md'), 'utf8');
+    const cwd = await readFile(cwdMarkerPath, 'utf8');
+    const expectedCwd = await realpath(join(vaultPath, 'nested'));
     expect(content).toContain('# hello');
     expect(content).toContain('CLI_OK');
+    expect(cwd.trim()).toBe(expectedCwd);
   });
 
   it('fails fast with install guidance when CLI is unavailable in auto mode', async () => {

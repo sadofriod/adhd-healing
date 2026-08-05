@@ -174,13 +174,18 @@ async function resolveResearchArtifacts(
   }, undefined, reportProgress);
 }
 
-async function prepareSessionTurn(reqData: DistillRequest): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
-  if (reqData.sessionId) {
-    const wasBound = await bindSession(reqData.sessionId);
-    if (!wasBound) throw new Error(`Session not found: ${reqData.sessionId}`);
-  } else {
+async function bindRequestSessionContext(reqData: DistillRequest): Promise<void> {
+  if (!reqData.sessionId) {
     clearSession();
+    return;
   }
+
+  const wasBound = await bindSession(reqData.sessionId);
+  if (!wasBound) throw new Error(`Session not found: ${reqData.sessionId}`);
+}
+
+async function prepareSessionTurn(reqData: DistillRequest): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  await bindRequestSessionContext(reqData);
   if (reqData.reset) await resetSession();
   const locale = reqData.locale ?? DEFAULT_LOCALE;
   const attachments = reqData.attachments ?? [];

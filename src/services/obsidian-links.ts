@@ -20,6 +20,11 @@ type MutableWikiLinkDocument = LinkableDocument & {
   readonly mentions: WikiLinkMention[];
 };
 
+function isMutableWikiLinkDocument(value: LinkableDocument): value is MutableWikiLinkDocument {
+  if (!('mentions' in value)) return false;
+  return Array.isArray((value as { mentions?: unknown }).mentions);
+}
+
 const WIKI_LINK_PATTERN = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g;
 
 function normalizeLinkTarget(value: string): string {
@@ -135,7 +140,7 @@ function createMaterializerState(input: {
   return {
     directoryPath: input.directoryPath,
     knownTargets,
-    linkedDocuments: new Map<string, WikiLinkDocument>(),
+    linkedDocuments: new Map<string, MutableWikiLinkDocument>(),
     usedStems: createSeededStemUsage(input.knownTargets),
   };
 }
@@ -166,7 +171,7 @@ function resolveTargetDocument(
   const lookupKey = createLookupKey(rawTarget);
   const existingTarget = getExistingTarget(state, lookupKey);
   if (existingTarget) {
-    if ('mentions' in existingTarget) appendMention(existingTarget, source, excerpt);
+    if (isMutableWikiLinkDocument(existingTarget)) appendMention(existingTarget, source, excerpt);
     return existingTarget;
   }
   return storeLinkedDocument(

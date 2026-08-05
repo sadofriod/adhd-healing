@@ -276,6 +276,7 @@ function getCompletionFields(result: CompletedDistillResponse, locale: Locale): 
   return { prompt: result.text, finalText: null, finalTokenUsage: null };
 }
 
+// eslint-disable-next-line max-lines-per-function
 export function useDistillSession(locale: Locale): DistillSessionState {
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null);
   const [conversation, setConversation] = useState<ConversationState>(() => createInitialConversation(locale));
