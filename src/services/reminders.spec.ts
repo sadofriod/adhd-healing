@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'bun:test';
-import { buildReminderScript, buildReminderTitle } from './reminders';
+import { buildReminderScript, buildReminderTitle, isReminderSyncEnabled } from './reminders';
+
+describe('isReminderSyncEnabled', () => {
+  it('treats falsey values as disabled and truthy values as enabled', () => {
+    expect(isReminderSyncEnabled(undefined)).toBe(false);
+    expect(isReminderSyncEnabled('')).toBe(false);
+    expect(isReminderSyncEnabled('false')).toBe(false);
+    expect(isReminderSyncEnabled('0')).toBe(false);
+    expect(isReminderSyncEnabled('true')).toBe(true);
+    expect(isReminderSyncEnabled('1')).toBe(true);
+    expect(isReminderSyncEnabled('yes')).toBe(true);
+  });
+});
 
 describe('buildReminderScript', () => {
   it('builds a timestamped title with an Obsidian wiki-link', () => {

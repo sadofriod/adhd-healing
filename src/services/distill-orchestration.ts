@@ -31,13 +31,33 @@ export type DistillOrchestrationDeps = {
   readonly runDeepResearch?: typeof runDeepResearch;
   readonly runFinalizeWritePipeline?: typeof runFinalizeWritePipeline;
   readonly persistDistillCheckpoint?: typeof persistDistillCheckpoint;
+  readonly now?: () => number;
+  readonly autoContinueDeadlineMs?: number;
+  readonly maxAutoContinueStallCount?: number;
 };
 
 type ContinueDecision = LlmClarifyDecision | LlmNoteDecision | LlmProgressDecision;
 type AutoContinueDecision = LlmNoteDecision | LlmProgressDecision;
 type DistillDecision = Awaited<ReturnType<typeof makeDecision>>;
+type NowProvider = () => number;
 
-const MAX_AUTO_CONTINUE_STEPS = 6;
+type AutoContinueGuards = {
+  readonly deadlineAt: number;
+  readonly deadlineMs: number;
+  readonly maxAutoContinueStallCount: number;
+  readonly now: NowProvider;
+  previousAutoContinueSignature?: string;
+  stallCount: number;
+};
+
+const DEFAULT_AUTO_CONTINUE_DEADLINE_MS = 60_000;
+const DEFAULT_MAX_AUTO_CONTINUE_STALL_COUNT = 3;
+
+class AutoContinueDeadlineExceededError extends Error {
+  constructor() {
+    super('Auto-continue deadline exceeded');
+  }
+}
 
 function createPersistedActivityReporter(reportProgress: LlmActivityReporter): LlmActivityReporter {
   return event => {
@@ -331,13 +351,31 @@ function getAutoContinueMessage(locale: Locale): string {
   return '基于当前阶段陈述继续自动执行';
 }
 
-function getAutoContinueLimitMessage(locale: Locale): string {
-  if (isEnglish(locale)) return 'Reached automatic continuation limit. Please clarify your top priority so I can continue.';
-  return '已达到自动续跑上限。请补充当前最高优先级，我将继续执行。';
+function getSystemPauseMessage(locale: Locale): string {
+  if (isEnglish(locale)) return 'System safeguard triggered. Task has been paused.';
+  return '触发系统保护，任务已暂停';
+}
+
+function getDeadlineExceededDetails(locale: Locale, deadlineMs: number): string {
+  if (isEnglish(locale)) {
+    return `Automatic continuation exceeded the internal deadline of ${deadlineMs}ms.`;
+  }
+  return `自动续跑超过内部时限 ${deadlineMs}ms。`;
+}
+
+function getAutoContinueStalledDetails(locale: Locale, stallCount: number): string {
+  if (isEnglish(locale)) {
+    return `Automatic continuation repeated the same intermediate decision ${stallCount} times.`;
+  }
+  return `自动续跑连续 ${stallCount} 次重复相同的中间决策。`;
 }
 
 function isClarifyDecision(decision: DistillDecision): decision is LlmClarifyDecision {
   return decision.type === 'clarify';
+}
+
+function isAutoContinueDecision(decision: DistillDecision): decision is AutoContinueDecision {
+  return decision.type === 'note' || decision.type === 'progress';
 }
 
 function toProgressContext(decision: AutoContinueDecision): LlmProgressDecision {
@@ -365,6 +403,48 @@ function reportAutoContinueProgress(
     message: getAutoContinueMessage(locale),
     details: decision.message,
   });
+}
+
+function buildAutoContinueSignature(decision: AutoContinueDecision): string {
+  if (decision.type === 'note') return `note:${decision.message}`;
+  return [
+    'progress',
+    decision.phase,
+    decision.message,
+    decision.details ?? '',
+    decision.operationId ?? '',
+  ].join(':');
+}
+
+function getRemainingDeadlineMs(deadlineAt: number, now: () => number): number {
+  return deadlineAt - now();
+}
+
+async function resolveDecisionWithinDeadline(
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  makeDecisionFn: typeof makeDecision,
+  deadlineAt: number,
+  now: () => number,
+  progress?: LlmProgressDecision
+): Promise<DistillDecision> {
+  const remainingMs = getRemainingDeadlineMs(deadlineAt, now);
+  if (remainingMs <= 0) throw new AutoContinueDeadlineExceededError();
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutResult = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new AutoContinueDeadlineExceededError()), remainingMs);
+  });
+
+  try {
+    return await Promise.race([
+      resolveDecision(session, reportProgress, locale, makeDecisionFn, progress),
+      timeoutResult,
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function persistCheckpointSafely(
@@ -405,6 +485,109 @@ async function handleContinue(
   };
 }
 
+async function handleSystemPause(
+  message: string,
+  details: string,
+  reportProgress: LlmActivityReporter
+): Promise<DistillApiResponse> {
+  reportProcessProgress(reportProgress, message, details);
+  await flushSessionPersistence();
+  return {
+    status: 'PAUSED',
+    sessionId: requireCurrentSessionId(),
+    text: details,
+  };
+}
+
+function createAutoContinueGuards(deps: DistillOrchestrationDeps): AutoContinueGuards {
+  const now = deps.now ?? Date.now;
+  const deadlineMs = deps.autoContinueDeadlineMs ?? DEFAULT_AUTO_CONTINUE_DEADLINE_MS;
+  return {
+    deadlineAt: now() + deadlineMs,
+    deadlineMs,
+    maxAutoContinueStallCount: deps.maxAutoContinueStallCount ?? DEFAULT_MAX_AUTO_CONTINUE_STALL_COUNT,
+    now,
+    previousAutoContinueSignature: undefined,
+    stallCount: 0,
+  };
+}
+
+async function resolveTerminalDecision(
+  decision: DistillDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  deps: DistillOrchestrationDeps,
+  guards: AutoContinueGuards
+): Promise<DistillApiResponse | null> {
+  if (isFinalDecision(decision)) {
+    return finalizeDecision(decision, session, reportProgress, locale, deps);
+  }
+
+  if (isClarifyDecision(decision)) {
+    return handleContinue(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
+  }
+
+  const decisionSignature = buildAutoContinueSignature(decision);
+  guards.stallCount = decisionSignature === guards.previousAutoContinueSignature ? guards.stallCount + 1 : 1;
+  guards.previousAutoContinueSignature = decisionSignature;
+  if (guards.stallCount < guards.maxAutoContinueStallCount) return null;
+
+  return handleSystemPause(
+    getSystemPauseMessage(locale),
+    getAutoContinueStalledDetails(locale, guards.stallCount),
+    reportProgress
+  );
+}
+
+async function advanceAutoContinueDecision(
+  decision: AutoContinueDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  deps: DistillOrchestrationDeps,
+  decide: typeof makeDecision,
+  guards: AutoContinueGuards
+): Promise<DistillDecision | DistillApiResponse> {
+  console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
+  reportAutoContinueProgress(reportProgress, decision, locale);
+  await persistCheckpointSafely(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
+
+  try {
+    return await resolveDecisionWithinDeadline(
+      session,
+      reportProgress,
+      locale,
+      decide,
+      guards.deadlineAt,
+      guards.now,
+      toProgressContext(decision)
+    );
+  } catch (error) {
+    if (!(error instanceof AutoContinueDeadlineExceededError)) throw error;
+    return handleSystemPause(
+      getSystemPauseMessage(locale),
+      getDeadlineExceededDetails(locale, guards.deadlineMs),
+      reportProgress
+    );
+  }
+}
+
+async function resolveNextLoopStep(
+  decision: DistillDecision,
+  session: Array<{ role: 'user' | 'assistant'; content: string }>,
+  reportProgress: LlmActivityReporter,
+  locale: Locale,
+  deps: DistillOrchestrationDeps,
+  decide: typeof makeDecision,
+  guards: AutoContinueGuards
+): Promise<DistillDecision | DistillApiResponse> {
+  const terminalResponse = await resolveTerminalDecision(decision, session, reportProgress, locale, deps, guards);
+  if (terminalResponse) return terminalResponse;
+  if (!isAutoContinueDecision(decision)) throw new Error(`Unsupported decision type: ${decision.type}`);
+  return advanceAutoContinueDecision(decision, session, reportProgress, locale, deps, decide, guards);
+}
+
 async function resolveDistillDecisionLoop(
   initialDecision: DistillDecision,
   session: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -413,33 +596,14 @@ async function resolveDistillDecisionLoop(
   deps: DistillOrchestrationDeps
 ): Promise<DistillApiResponse> {
   const decide = deps.makeDecision ?? makeDecision;
+  const guards = createAutoContinueGuards(deps);
   let decision = initialDecision;
 
-  for (let step = 0; step < MAX_AUTO_CONTINUE_STEPS; step += 1) {
-    if (isFinalDecision(decision)) {
-      return finalizeDecision(decision, session, reportProgress, locale, deps);
-    }
-
-    if (isClarifyDecision(decision)) {
-      return handleContinue(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
-    }
-
-    console.log(`[distill] 💬 ${getContinueLogLabel(decision)}: ${decision.message}`);
-    reportAutoContinueProgress(reportProgress, decision, locale);
-    await persistCheckpointSafely(decision, session, reportProgress, locale, deps.persistDistillCheckpoint);
-    decision = await resolveDecision(
-      session,
-      reportProgress,
-      locale,
-      decide,
-      toProgressContext(decision)
-    );
+  for (;;) {
+    const nextStep = await resolveNextLoopStep(decision, session, reportProgress, locale, deps, decide, guards);
+    if ('status' in nextStep) return nextStep;
+    decision = nextStep;
   }
-
-  return handleContinue({
-    type: 'clarify',
-    message: getAutoContinueLimitMessage(locale),
-  }, session, reportProgress, locale, deps.persistDistillCheckpoint);
 }
 
 export async function runDistillOrchestration(

@@ -4,6 +4,14 @@ export type MinimalReminderInput = {
   readonly now?: Date;
 };
 
+export function isReminderSyncEnabled(value: string | undefined): boolean {
+  if (!value) return false;
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  return false;
+}
+
 export function buildReminderTitle(input: MinimalReminderInput): string {
   const now = input.now ?? new Date();
   const time = now.toLocaleTimeString('zh-CN', {
@@ -38,6 +46,12 @@ async function spawnOsascript(script: string): Promise<void> {
 }
 
 export async function syncToAppleReminders(title: string): Promise<void> {
+  const enabled = isReminderSyncEnabled(Bun.env.REMINDERS_SYNC_ENABLED);
+  if (!enabled) {
+    console.log('[reminders] Reminder sync is disabled; skipping reminder creation.');
+    return;
+  }
+
   console.log('[reminders] Adding reminder:', title);
   await spawnOsascript(buildReminderScript(title));
 }

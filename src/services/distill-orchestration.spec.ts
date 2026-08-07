@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { DistillRequest, LlmFinalDecision } from '../types';
 import { runDistillOrchestration } from './distill-orchestration';
 import {
@@ -30,6 +30,7 @@ function buildFinalDecision(): LlmFinalDecision {
   };
 }
 
+beforeEach(deleteSessionHistory);
 afterEach(deleteSessionHistory);
 
 describe('runDistillOrchestration auto continuation', () => {
@@ -82,4 +83,91 @@ describe('runDistillOrchestration auto continuation', () => {
     expect(sessions[0]?.status).toBe('FINISHED');
     expect(sessions[0]?.messages.at(-1)?.content).toBe('结论已收敛，准备归档。');
   });
+
+  test('keeps auto-continuing beyond six progress rounds until a real clarify decision appears', async () => {
+    let decisionCalls = 0;
+
+    const response = await runWithSessionContext(async () => runDistillOrchestration(
+      REQUEST,
+      () => undefined,
+      {
+        makeDecision: async () => {
+          decisionCalls += 1;
+          if (decisionCalls <= 7) {
+            return {
+              type: 'progress',
+              phase: 'tool-call',
+              message: `继续执行第 ${decisionCalls} 轮`,
+            };
+          }
+
+          return {
+            type: 'clarify',
+            message: '请确认你优先要保留哪类证据？',
+          };
+        },
+        persistDistillCheckpoint: async () => undefined,
+      }
+    ));
+
+    expect(response.status).toBe('CONTINUE');
+    expect(response.text).toBe('请确认你优先要保留哪类证据？');
+    expect(decisionCalls).toBe(8);
+  });
+
+  test('pauses automatically when the internal auto-continue deadline is exceeded', async () => {
+    let decisionCalls = 0;
+
+    const response = await runWithSessionContext(async () => runDistillOrchestration(
+      REQUEST,
+      () => undefined,
+      {
+        autoContinueDeadlineMs: 10,
+        makeDecision: async () => {
+          decisionCalls += 1;
+          if (decisionCalls === 1) {
+            return {
+              type: 'progress',
+              phase: 'tool-call',
+              message: '正在调用慢速工具',
+            };
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 30));
+          return buildFinalDecision();
+        },
+        persistDistillCheckpoint: async () => undefined,
+      }
+    ));
+
+    expect(response.status).toBe('PAUSED');
+    expect(response.text).toBe('自动续跑超过内部时限 10ms。');
+    expect(decisionCalls).toBe(2);
+  });
+
+  test('pauses automatically when the same intermediate decision stalls repeatedly', async () => {
+    let decisionCalls = 0;
+
+    const response = await runWithSessionContext(async () => runDistillOrchestration(
+      REQUEST,
+      () => undefined,
+      {
+        maxAutoContinueStallCount: 3,
+        makeDecision: async () => {
+          decisionCalls += 1;
+          return {
+            type: 'progress',
+            phase: 'tool-call',
+            message: '继续等待同一个工具结果',
+          };
+        },
+        persistDistillCheckpoint: async () => undefined,
+      }
+    ));
+
+    expect(response.status).toBe('PAUSED');
+    expect(response.text).toBe('自动续跑连续 3 次重复相同的中间决策。');
+    expect(decisionCalls).toBe(3);
+  });
+
 });
